@@ -1,0 +1,34 @@
+{
+	admin off
+}
+
+{$FRONTEND_SITE} {
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		X-Frame-Options DENY
+	}
+
+	@business path /api/v1/auth/login /api/v1/auth/me /api/v1/auth/logout /api/v1/function-templates /health/live
+	handle @business {
+		request_body {
+			max_size 16KB
+		}
+		reverse_proxy {$BACKEND_UPSTREAM} {
+			header_up Host {upstream_hostport}
+			header_up X-VI-Gateway-Key {$VI_GATEWAY_KEY}
+			header_up X-VI-Client-IP {client_ip}
+		}
+	}
+	@unsupported path /api /api/* /health /health/*
+	handle @unsupported {
+		header Content-Type application/json
+		respond `{"error":{"code":"not_available","message":"This feature is unavailable on staging"}}` 404
+	}
+	handle {
+		root * /srv
+		encode gzip
+		try_files {path} /index.html
+		file_server
+	}
+}

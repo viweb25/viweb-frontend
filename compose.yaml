@@ -1,0 +1,18 @@
+name: vi-websync-frontend
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      FRONTEND_SITE: ${FRONTEND_SITE:?Set the frontend HTTPS hostname}
+      BACKEND_UPSTREAM: ${BACKEND_UPSTREAM:?Set the backend HTTPS URL}
+      VI_GATEWAY_KEY: ${VI_GATEWAY_KEY:?Set the shared gateway key}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - tls:/data
+    restart: unless-stopped
+volumes:
+  tls:
