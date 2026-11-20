@@ -32,8 +32,7 @@ gateway key private. Use the backend's exact proxy policy for allowed routes.
 ## Sign up and connect a camera
 
 1. Open the HTTPS dashboard and choose **Create an account**. Enter your workspace
-   name, email, password, and the signup code from your administrator. Then sign
-   in with the same email and password to open **Inspection**.
+   name, email, and password. After account creation, **Inspection** opens automatically.
 2. For a camera exposed as a webcam or an HDMI capture device, connect it to the
    operator PC, select it under **Camera**, and click **Start camera**. Allow
    browser access. If device names are hidden before permission is granted, start
@@ -53,3 +52,9 @@ gateway key private. Use the backend's exact proxy policy for allowed routes.
 
 Camera access requires HTTPS or localhost. Direct hardware triggering and
 vendor SDK acquisition require the camera model and robot or PLC interface.
+
+The **Dataset & models** dashboard page walks through private JTheta dataset
+preparation, local YOLO training, model review, and checkpoint activation.
+**Reference images** collects frame-level labels. Create object-level bounding
+boxes in JTheta for detector training. The inspection screen reads supported
+classes from the loaded model and lets the operator adjust the confidence threshold.

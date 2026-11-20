@@ -270,3 +270,46 @@ video.demo-image { margin-top: 12px; }
     align-items: start;
   }
 }
+
+.model-workflow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
+  gap: 16px;
+}
+
+.workflow-stage {
+  min-width: 0;
+  line-height: 1.6;
+}
+
+.workflow-stage header {
+  margin-bottom: 16px;
+}
+
+.workflow-stage p, .workflow-stage li {
+  color: var(--muted);
+}
+
+.workflow-stage li + li {
+  margin-top: 8px;
+}
+
+.workflow-link {
+  display: inline-block;
+  margin: 10px 12px;
+  text-decoration: underline;
+}
+
+.workflow-command pre {
+  color: #e9edf8;
+  background: #14213a;
+  padding: 14px;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+
+.workflow-copy-status {
+  margin-left: 10px;
+  color: var(--muted);
+  font-size: .85rem;
+}

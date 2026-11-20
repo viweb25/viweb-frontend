@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
 
 import { useWorkspacePreferences } from './context/WorkspacePreferences';
-import { detectObjects, inspectImage, type InspectionResult } from './services/api/inspection';
+import { detectObjects, inspectImage, loadDetectionModel, type DetectionModel, type InspectionResult } from './services/api/inspection';
 import { exampleImage, loadExamples, saveExample, type Example, type Label } from './services/api/trainingExamples';
 
 async function makeJpeg(source: CanvasImageSource, width: number, height: number) {
@@ -26,10 +26,16 @@ export function InspectionDemo({ mode, onResult }: {
   const training = mode === 'training';
   const [engine, setEngine] = useState<'qwen' | 'yolo'>('yolo');
   const [target, setTarget] = useState('');
+  const [model, setModel] = useState<DetectionModel | null>(null);
+  const [modelError, setModelError] = useState(false);
+  const [modelRefresh, setModelRefresh] = useState(0);
+  const [confidence, setConfidence] = useState('50');
   const [expectedCount, setExpectedCount] = useState('1');
   const count = Number(expectedCount);
   const canInspect = engine === 'qwen' ? !!rule.trim()
-    : !!target.trim() && Number.isInteger(count) && count >= 1 && count <= 999;
+    : model?.status === 'ready' && model.classes.includes(target) &&
+      Number.isInteger(count) && count >= 1 && count <= 999 &&
+      Number(confidence) >= 1 && Number(confidence) <= 100;
   const monitor = useRef<HTMLDivElement>(null);
   const video = useRef<HTMLVideoElement>(null);
   const photoInput = useRef<HTMLInputElement>(null);
@@ -89,6 +95,22 @@ export function InspectionDemo({ mode, onResult }: {
     void refreshCameras();
     return () => devices?.removeEventListener('devicechange', refreshCameras);
   }, [mode, refreshCameras, stopVideo]);
+
+  useEffect(() => {
+    if (mode !== 'inspect' || engine !== 'yolo') return;
+    const controller = new AbortController();
+    setModel(null);
+    setModelError(false);
+    loadDetectionModel(controller.signal).then(info => {
+      if (controller.signal.aborted) return;
+      setModel(info);
+      setTarget(previous => info.classes.includes(previous) ? previous
+        : info.classes.length === 1 ? info.classes[0] : '');
+    }).catch(() => {
+      if (!controller.signal.aborted) setModelError(true);
+    });
+    return () => controller.abort();
+  }, [mode, engine, modelRefresh]);
 
   useEffect(() => {
     if (!training) return;
@@ -210,7 +232,7 @@ export function InspectionDemo({ mode, onResult }: {
     setCompleted(null);
     try {
       const response = engine === 'yolo'
-        ? await detectObjects(target.trim(), count, jpeg)
+        ? await detectObjects(target, count, Number(confidence) / 100, jpeg)
         : await inspectImage(rule.trim(), jpeg);
       setCompleted({ rule: rule.trim(), result: response });
       onResult(response);
@@ -316,7 +338,7 @@ export function InspectionDemo({ mode, onResult }: {
             onClick={() => void capture(true)}>Capture &amp; detect</button>}
           <button className="secondary" disabled={!cameraReady || busy} onClick={() => void capture()}>Capture frame</button>
           </div>}
-          {!training && cameraReady && !canInspect &&
+          {!training && cameraReady && !canInspect && (engine === 'qwen' || model?.status === 'ready') &&
             <p className="muted">Set the inspection rule or target class and count before capturing and detecting.</p>}
           <div className="camera-heading">
             <h3>{result ? 'Detection frame' : 'Captured frame'}</h3>
@@ -365,15 +387,30 @@ export function InspectionDemo({ mode, onResult }: {
             </select>
           </label>
           {engine === 'yolo' ? <>
-            <label className="demo-field">Target class
-              <input value={target} maxLength={100} disabled={busy} onChange={event => {
+            <div className="result-box" role="status">
+              {model?.status === 'ready' ? <>Loaded model <strong>{model.model}</strong></>
+                : modelError || model?.status === 'unavailable' ? 'The YOLO model could not be loaded.'
+                : model?.status === 'missing' ? 'No YOLO checkpoint is loaded.' : 'Checking for a YOLO model…'}
+              {model?.status !== 'ready' && <p><a href="#models">Set up a YOLO model</a></p>}
+              <button type="button" className="secondary" disabled={busy}
+                onClick={() => { setCompleted(null); setModelRefresh(value => value + 1); }}>Refresh model</button>
+            </div>
+            <label className="demo-field">Object to detect
+              <select value={target} disabled={busy || model?.status !== 'ready'} onChange={event => {
                 setTarget(event.target.value);
                 setCompleted(null);
-              }} />
+              }}>
+                <option value="">Choose a class</option>
+                {model?.classes.map(label => <option key={label}>{label}</option>)}
+              </select>
             </label>
             <label className="demo-field">Expected count
               <input type="number" min={1} max={999} value={expectedCount} disabled={busy}
                 onChange={event => { setExpectedCount(event.target.value); setCompleted(null); }} />
+            </label>
+            <label className="demo-field">Minimum confidence (%)
+              <input type="number" min={1} max={100} value={confidence} disabled={busy}
+                onChange={event => { setConfidence(event.target.value); setCompleted(null); }} />
             </label>
           </> : <label className="demo-field">Acceptance rule
             <textarea value={rule} maxLength={400} disabled={busy} rows={4}

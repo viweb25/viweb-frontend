@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 
 import { useSession } from './context/SessionContext';
 import { InspectionDemo } from './InspectionDemo';
+import { ModelWorkflow } from './ModelWorkflow';
 import { useWorkspacePreferences } from './context/WorkspacePreferences';
 import { loadCatalogue, type Template } from './services/api/catalogue';
 import { loadHealth } from './services/api/health';
@@ -10,7 +11,8 @@ import type { InspectionResult } from './services/api/inspection';
 const pages = {
   overview: { name: 'Overview', icon: '▦', description: 'Inspect parts and review results from this session.' },
   inspection: { name: 'Inspection', icon: '◎', description: 'Connect a camera, capture a frame, and review detections.' },
-  training: { name: 'Training examples', icon: '▤', description: 'Save labeled images for a dedicated inspection model.' },
+  models: { name: 'Dataset & models', icon: '◇', description: 'Prepare images, train YOLO, and connect a model to your camera.' },
+  training: { name: 'Reference images', icon: '▤', description: 'Collect frame-level PASS and FAIL examples for reference.' },
   catalogue: { name: 'Function catalogue', icon: '◇', description: 'Browse inspection templates available from the API.' },
   preferences: { name: 'Preferences', icon: '⚙', description: 'Set your workspace name and default inspection rule on this browser.' },
 } as const;
@@ -134,11 +136,15 @@ export function App() {
             </div>}
           </section>
           <section className="quick-links" aria-label="Workspace tools">
-            <a className="panel shortcut" href="#training"><span className="nav-icon" aria-hidden="true">▤</span><span><strong>Training examples</strong><small>Capture and label images</small></span><span aria-hidden="true">→</span></a>
+            <a className="panel shortcut" href="#models"><span className="nav-icon" aria-hidden="true">◇</span><span><strong>Dataset &amp; models</strong><small>Prepare images and train YOLO</small></span><span aria-hidden="true">→</span></a>
+            <a className="panel shortcut" href="#training"><span className="nav-icon" aria-hidden="true">▤</span><span><strong>Reference images</strong><small>Save PASS and FAIL examples</small></span><span aria-hidden="true">→</span></a>
             <a className="panel shortcut" href="#catalogue"><span className="nav-icon" aria-hidden="true">◇</span><span><strong>Function catalogue</strong><small>{templates ? `${templates.length} templates` : 'Browse inspection templates'}</small></span><span aria-hidden="true">→</span></a>
           </section>
         </>}
 
+        {page === 'models' && <ModelWorkflow />}
+        {page === 'training' && <p className="notice">These frame labels are for reference. For YOLO training,
+          annotate each object with a bounding box in <a href="#models">Dataset &amp; models</a>.</p>}
         <InspectionDemo mode={mode} onResult={recordResult} />
 
         {page === 'catalogue' && <>

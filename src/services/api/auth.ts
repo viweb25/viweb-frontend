@@ -27,11 +27,11 @@ export async function signOut() {
   if (!response.ok) throw await readApiError(response);
 }
 
-export async function signUp(email: string, password: string, organisation: string, code: string) {
+export async function signUp(email: string, password: string, organisation: string) {
   const response = await fetch(`${endpoint}/signup`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password, organisation, code }),
+    body: JSON.stringify({ email, password, organisation }),
   });
   if (!response.ok) throw await readApiError(response);
 }

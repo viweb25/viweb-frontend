@@ -20,7 +20,7 @@
 			header_up X-VI-Client-IP {client_ip}
 		}
 	}
-	@inspection path /api/v1/demo/inspect /api/v1/demo/detect
+	@inspection path /api/v1/demo/inspect /api/v1/demo/detect /api/v1/demo/detection-model
 	handle @inspection {
 		request_body {
 			max_size 5MiB

@@ -64,14 +64,19 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     const data = new FormData(form);
     setSubmitting(true);
     setLoginError('');
+    let accountCreated = false;
     try {
       const email = String(data.get('email')).trim();
       const password = String(data.get('password'));
       if (signup) {
-        await signUp(email, password, String(data.get('organisation')).trim(), String(data.get('code')).trim());
+        if (password !== data.get('confirm_password')) {
+          setLoginError('The passwords do not match.');
+          return;
+        }
+        await signUp(email, password, String(data.get('organisation')).trim());
+        accountCreated = true;
         setRegisteredEmail(email);
         setSignup(false);
-        return;
       }
       await signIn(email, password);
       form.reset();
@@ -81,7 +86,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setAttempt(value => value + 1);
     } catch (error) {
       setLoginError(error instanceof ApiRequestError && [401, 403, 409, 429, 503].includes(error.status)
-        ? error.message : signup ? 'Could not create the account. Check the form and try again.'
+        ? error.message : signup && !accountCreated ? 'Could not create the account. Check the form and try again.'
           : 'Could not sign in. Try again.');
     } finally {
       setSubmitting(false);
@@ -96,7 +101,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       </aside>
       <section className="sign-in-card" aria-labelledby="sign-in-heading">
         <h1 id="sign-in-heading">{signup ? 'Create your account' : 'Sign in'}</h1>
-        <p className="muted">{signup ? 'Use the signup code supplied by your administrator.' : 'Sign in to open your inspection workspace.'}</p>
+        <p className="muted">{signup ? 'Enter your workspace name, email, and password.' : 'Sign in to open your inspection workspace.'}</p>
         {status === 'loading' && <p className="sign-in-state" role="status">Checking your session…</p>}
         {status === 'unavailable' && <>
           <p className="notice" role="status">The sign-in service is temporarily unavailable.</p>
@@ -117,8 +122,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           <label className="demo-field">Password
             <input name="password" type="password" autoComplete={signup ? "new-password" : "current-password"} minLength={signup ? 15 : 1} maxLength={128} required />
           </label>
-          {signup && <label className="demo-field">Signup code
-            <input name="code" type="password" autoComplete="off" maxLength={256} required />
+          {signup && <label className="demo-field">Confirm password
+            <input name="confirm_password" type="password" autoComplete="new-password"
+              minLength={15} maxLength={128} required />
           </label>}
           {signup && <p className="muted">Use at least 15 characters for your password.</p>}
           {loginError && <p className="notice" role="alert">{loginError}</p>}
