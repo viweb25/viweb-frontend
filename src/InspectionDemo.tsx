@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
 
 import { useWorkspacePreferences } from './context/WorkspacePreferences';
-import { inspectImage, type InspectionResult } from './services/api/inspection';
+import { detectObjects, inspectImage, type InspectionResult } from './services/api/inspection';
 import { exampleImage, loadExamples, saveExample, type Example, type Label } from './services/api/trainingExamples';
 
 async function makeJpeg(source: CanvasImageSource, width: number, height: number) {
@@ -24,6 +24,13 @@ export function InspectionDemo({ mode, onResult }: {
   const { preferences, update } = useWorkspacePreferences();
   const rule = preferences.acceptanceRule;
   const training = mode === 'training';
+  const [engine, setEngine] = useState<'qwen' | 'yolo'>('yolo');
+  const [target, setTarget] = useState('');
+  const [expectedCount, setExpectedCount] = useState('1');
+  const count = Number(expectedCount);
+  const canInspect = engine === 'qwen' ? !!rule.trim()
+    : !!target.trim() && Number.isInteger(count) && count >= 1 && count <= 999;
+  const monitor = useRef<HTMLDivElement>(null);
   const video = useRef<HTMLVideoElement>(null);
   const photoInput = useRef<HTMLInputElement>(null);
   const uploadInput = useRef<HTMLInputElement>(null);
@@ -35,6 +42,7 @@ export function InspectionDemo({ mode, onResult }: {
   const [cameraReady, setCameraReady] = useState(false);
   const [image, setImage] = useState<Blob | null>(null);
   const [preview, setPreview] = useState('');
+  const [frameRatio, setFrameRatio] = useState(1);
   const [completed, setCompleted] = useState<{ rule: string; result: InspectionResult } | null>(null);
   const result = completed?.rule === rule.trim() ? completed.result : null;
   const [inspecting, setInspecting] = useState(false);
@@ -152,7 +160,7 @@ export function InspectionDemo({ mode, onResult }: {
     }
   }
 
-  async function capture() {
+  async function capture(runInspection = false) {
     const frame = video.current;
     if (!frame?.videoWidth || stream.current?.getVideoTracks()[0]?.readyState !== 'live') {
       setMessage('Start a video source before capturing a frame.');
@@ -162,8 +170,10 @@ export function InspectionDemo({ mode, onResult }: {
     setCompleted(null);
     setImage(null);
     try {
-      setImage(await makeJpeg(frame, frame.videoWidth, frame.videoHeight));
+      const jpeg = await makeJpeg(frame, frame.videoWidth, frame.videoHeight);
+      setImage(jpeg);
       setMessage('');
+      if (runInspection) await inspect(jpeg);
     } catch {
       setMessage('Could not capture a frame.');
     } finally {
@@ -193,13 +203,15 @@ export function InspectionDemo({ mode, onResult }: {
     }
   }
 
-  async function inspect() {
-    if (!image) return;
+  async function inspect(jpeg: Blob | null) {
+    if (!jpeg || !canInspect) return;
     setBusy(true);
     setInspecting(true);
     setCompleted(null);
     try {
-      const response = await inspectImage(rule.trim(), image);
+      const response = engine === 'yolo'
+        ? await detectObjects(target.trim(), count, jpeg)
+        : await inspectImage(rule.trim(), jpeg);
       setCompleted({ rule: rule.trim(), result: response });
       onResult(response);
     } catch {
@@ -235,9 +247,14 @@ export function InspectionDemo({ mode, onResult }: {
   if (!mode) return null;
 
   return <>
-    <div className="workbench">
+    <div className="workbench camera-workbench">
       <article className="panel">
-        <h2>Image source</h2>
+        <div className="camera-heading">
+          <h2>Camera station</h2>
+          <span className={cameraReady ? 'camera-state live' : 'camera-state'}>
+            {cameraReady ? '● Live' : activeSource ? 'Connecting…' : 'Camera offline'}
+          </span>
+        </div>
         {cameraSupported ? <>
           <label className="demo-field">Camera
             <select value={cameraChoice} disabled={busy || activeSource === 'camera'}
@@ -257,7 +274,7 @@ export function InspectionDemo({ mode, onResult }: {
           </button> : <button className="secondary" disabled={busy} onClick={() => startVideo('camera')}>
             Start camera
           </button>}
-          <button className="secondary" disabled={!cameraReady || busy} onClick={capture}>Capture frame</button>
+
         </div>}
         <div className="demo-actions">
           {sharingSupported && <button className="secondary" disabled={busy || !!activeSource}
@@ -282,11 +299,46 @@ export function InspectionDemo({ mode, onResult }: {
             <li>For CCTV or industrial cameras, open the live feed in its viewer, then share that window or tab in a supported desktop browser.</li>
           </ul>
         </details>
-        <video className="demo-image" ref={video} hidden={!cameraReady} muted playsInline
-          onPlaying={() => { if (stream.current) setCameraReady(true); }} />
-        {preview
-          ? <img className="demo-image image-preview" src={preview} alt="Selected image" />
+        <div className="camera-monitor" ref={monitor}>
+          <div className="camera-heading">
+            <h3>Live feed</h3>
+            {document.fullscreenEnabled && <button className="secondary" type="button" onClick={() => {
+              const fullscreen = document.fullscreenElement ? document.exitFullscreen()
+                : monitor.current?.requestFullscreen();
+              void fullscreen?.catch(() => setMessage('Full screen is unavailable in this browser.'));
+            }}>Full screen</button>}
+          </div>
+          <video className="demo-image" ref={video} hidden={!cameraReady} muted playsInline
+            onPlaying={() => { if (stream.current) setCameraReady(true); }} />
+          {!cameraReady && <div className="image-placeholder">Start the camera or share its viewer to see the live feed.</div>}
+          {activeSource && <div className="demo-actions">
+          {!training && <button disabled={!cameraReady || !canInspect || busy}
+            onClick={() => void capture(true)}>Capture &amp; detect</button>}
+          <button className="secondary" disabled={!cameraReady || busy} onClick={() => void capture()}>Capture frame</button>
+          </div>}
+          {!training && cameraReady && !canInspect &&
+            <p className="muted">Set the inspection rule or target class and count before capturing and detecting.</p>}
+          <div className="camera-heading">
+            <h3>{result ? 'Detection frame' : 'Captured frame'}</h3>
+            {result && <span className={`badge ${result.decision.toLowerCase()}`}>{result.decision}</span>}
+          </div>
+          {preview
+          ? <div className="detection-preview">
+            <img src={preview} alt="Selected image" onLoad={event => {
+              const { naturalWidth, naturalHeight } = event.currentTarget;
+              setFrameRatio(naturalWidth / naturalHeight);
+            }} />
+            {!training && result?.detections?.map((box, index) => (
+              <div className="detection-box" key={index} style={{
+                left: `${box.x1 * 100}%`, top: `${box.y1 * 100}%`,
+                width: `${(box.x2 - box.x1) * 100}%`, height: `${(box.y2 - box.y1) * 100}%`,
+              }}>
+                <span>{box.label} {Math.round(box.confidence * 100)}%</span>
+              </div>
+            ))}
+          </div>
           : <div className="image-placeholder">Capture a frame or upload an image</div>}
+        </div>
         {message && <p className="muted" role="status">{message}</p>}
       </article>
       <article className="panel">
@@ -303,12 +355,32 @@ export function InspectionDemo({ mode, onResult }: {
           </div>
           {availability && <p className="notice" role="status">{availability}</p>}
         </> : <>
-          <label className="demo-field">Acceptance rule
+          <label className="demo-field">Inspection model
+            <select value={engine} disabled={busy} onChange={event => {
+              setEngine(event.target.value === 'yolo' ? 'yolo' : 'qwen');
+              setCompleted(null);
+            }}>
+              <option value="qwen">Qwen vision rule</option>
+              <option value="yolo">YOLO object count</option>
+            </select>
+          </label>
+          {engine === 'yolo' ? <>
+            <label className="demo-field">Target class
+              <input value={target} maxLength={100} disabled={busy} onChange={event => {
+                setTarget(event.target.value);
+                setCompleted(null);
+              }} />
+            </label>
+            <label className="demo-field">Expected count
+              <input type="number" min={1} max={999} value={expectedCount} disabled={busy}
+                onChange={event => { setExpectedCount(event.target.value); setCompleted(null); }} />
+            </label>
+          </> : <label className="demo-field">Acceptance rule
             <textarea value={rule} maxLength={400} disabled={busy} rows={4}
               placeholder="Describe what an acceptable part looks like"
               onChange={event => { update({ acceptanceRule: event.target.value }); setCompleted(null); }} />
-          </label>
-          <button disabled={!image || !rule.trim() || busy} onClick={inspect}>Inspect image <span aria-hidden="true">→</span></button>
+          </label>}
+          <button disabled={!image || !canInspect || busy} onClick={() => void inspect(image)}>Detect now <span aria-hidden="true">→</span></button>
           <div className="result-box" role="status">
             {inspecting ? 'Inspecting image…' : result
               ? <><strong className={`badge ${result.decision.toLowerCase()}`}>{result.decision}</strong>
@@ -318,6 +390,24 @@ export function InspectionDemo({ mode, onResult }: {
         </>}
       </article>
     </div>
+    {!training && preview && !!result?.detections?.length && <section className="panel saved-panel">
+      <h2>Detected parts</h2>
+      <div className="detection-crops">
+        {result.detections.map((box, index) => {
+          const width = box.x2 - box.x1;
+          const height = box.y2 - box.y1;
+          return <figure key={index}>
+            <div className="detection-crop" style={{ aspectRatio: frameRatio * width / height }}>
+              <img src={preview} alt={`${box.label} ${index + 1}`} style={{
+                width: `${100 / width}%`, left: `${-100 * box.x1 / width}%`,
+                top: `${-100 * box.y1 / height}%`,
+              }} />
+            </div>
+            <figcaption>{box.label} {index + 1} · {Math.round(box.confidence * 100)}%</figcaption>
+          </figure>;
+        })}
+      </div>
+    </section>}
     {training && <section className="panel saved-panel">
       <h2>Saved examples</h2>
       {ready && examples.length === 0 && <p className="muted">No saved examples yet.</p>}

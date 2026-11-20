@@ -166,3 +166,107 @@ video.demo-image { margin-top: 12px; }
 .camera-help summary { cursor: pointer; font-weight: 650; }
 .camera-help ul { padding-left: 20px; }
 .camera-help li + li { margin-top: 5px; }
+
+.detection-preview {
+  position: relative;
+}
+
+.detection-preview img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.detection-box {
+  position: absolute;
+  box-sizing: border-box;
+  border: 2px solid #22c55e;
+  pointer-events: none;
+}
+
+.detection-box span {
+  display: inline-block;
+  padding: 2px 4px;
+  background: #14532d;
+  color: white;
+  font-size: 0.75rem;
+}
+
+.detection-crops {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 12px;
+}
+
+.detection-crops figure {
+  margin: 0;
+}
+
+.detection-crop {
+  position: relative;
+  overflow: hidden;
+}
+
+.detection-crop img {
+  position: absolute;
+  max-width: none;
+}
+
+.camera-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.camera-state {
+  border-radius: 999px;
+  padding: 4px 10px;
+  background: #f2f3f7;
+  color: var(--muted);
+  font-size: .78rem;
+  white-space: nowrap;
+}
+
+.camera-state.live {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.camera-monitor {
+  margin-top: 20px;
+  min-width: 0;
+}
+
+.camera-monitor h3 {
+  margin: 12px 0;
+  font-size: .95rem;
+}
+
+.camera-monitor .demo-image {
+  max-height: min(65vh, 720px);
+  background: #101524;
+  margin: 0;
+}
+
+.demo-image[hidden] {
+  display: none;
+}
+
+.camera-monitor:fullscreen {
+  padding: 20px;
+  overflow: auto;
+  background: #fff;
+}
+
+.camera-monitor .detection-preview {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+@media (min-width: 1000px) {
+  .camera-workbench {
+    grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr);
+    align-items: start;
+  }
+}

@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 
-import { loadCurrentUser, signIn, signOut, type SignedInUser } from '../services/api/auth';
+import { loadCurrentUser, signIn, signOut, signUp, type SignedInUser } from '../services/api/auth';
 import { ApiRequestError } from '../services/api/client';
 
 const SessionContext = createContext<{
@@ -16,6 +16,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [attempt, setAttempt] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [loginError, setLoginError] = useState('');
+  const [signup, setSignup] = useState(false);
+  const [registeredEmail, setRegisteredEmail] = useState('');
 
   useEffect(() => {
     let active: AbortController | undefined;
@@ -63,14 +65,24 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setSubmitting(true);
     setLoginError('');
     try {
-      await signIn(String(data.get('email')).trim(), String(data.get('password')));
+      const email = String(data.get('email')).trim();
+      const password = String(data.get('password'));
+      if (signup) {
+        await signUp(email, password, String(data.get('organisation')).trim(), String(data.get('code')).trim());
+        setRegisteredEmail(email);
+        setSignup(false);
+        return;
+      }
+      await signIn(email, password);
       form.reset();
-      window.history.replaceState(null, '', '/#overview');
+      setRegisteredEmail('');
+      window.history.replaceState(null, '', '/#inspection');
       setStatus('loading');
       setAttempt(value => value + 1);
     } catch (error) {
-      setLoginError(error instanceof ApiRequestError && [401, 429].includes(error.status)
-        ? error.message : 'Could not sign in. Try again.');
+      setLoginError(error instanceof ApiRequestError && [401, 403, 409, 429, 503].includes(error.status)
+        ? error.message : signup ? 'Could not create the account. Check the form and try again.'
+          : 'Could not sign in. Try again.');
     } finally {
       setSubmitting(false);
     }
@@ -83,8 +95,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         <p>Visual inspection<br />for your team.</p>
       </aside>
       <section className="sign-in-card" aria-labelledby="sign-in-heading">
-        <h1 id="sign-in-heading">Sign in</h1>
-        <p className="muted">Enter your email and password to open your inspection workspace.</p>
+        <h1 id="sign-in-heading">{signup ? 'Create your account' : 'Sign in'}</h1>
+        <p className="muted">{signup ? 'Use the signup code supplied by your administrator.' : 'Sign in to open your inspection workspace.'}</p>
         {status === 'loading' && <p className="sign-in-state" role="status">Checking your session…</p>}
         {status === 'unavailable' && <>
           <p className="notice" role="status">The sign-in service is temporarily unavailable.</p>
@@ -93,16 +105,32 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             setAttempt(value => value + 1);
           }}>Try again</button>
         </>}
-        {status === 'anonymous' && <form onSubmit={submit}>
+        {status === 'anonymous' && <>
+          {!signup && registeredEmail && <p role="status">Account created. Sign in with your new password.</p>}
+          <form key={signup ? 'signup' : 'login'} onSubmit={submit}>
+          {signup && <label className="demo-field">Company or workspace name
+            <input name="organisation" autoComplete="organization" maxLength={200} required />
+          </label>}
           <label className="demo-field">Email
-            <input name="email" type="email" autoComplete="username" maxLength={254} required />
+            <input name="email" type="email" autoComplete="username" defaultValue={registeredEmail} maxLength={254} required />
           </label>
           <label className="demo-field">Password
-            <input name="password" type="password" autoComplete="current-password" maxLength={128} required />
+            <input name="password" type="password" autoComplete={signup ? "new-password" : "current-password"} minLength={signup ? 15 : 1} maxLength={128} required />
           </label>
+          {signup && <label className="demo-field">Signup code
+            <input name="code" type="password" autoComplete="off" maxLength={256} required />
+          </label>}
+          {signup && <p className="muted">Use at least 15 characters for your password.</p>}
           {loginError && <p className="notice" role="alert">{loginError}</p>}
-          <button disabled={submitting} type="submit">{submitting ? 'Signing in…' : 'Sign in'}</button>
-        </form>}
+          <button disabled={submitting} type="submit">{signup
+            ? submitting ? 'Creating account…' : 'Create account'
+            : submitting ? 'Signing in…' : 'Sign in'}</button>
+          </form>
+          <button className="secondary" type="button" disabled={submitting} onClick={() => {
+            setLoginError('');
+            setSignup(value => !value);
+          }}>{signup ? 'Back to sign in' : 'Create an account'}</button>
+        </>}
       </section>
     </div>
   </main>;

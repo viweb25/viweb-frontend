@@ -26,3 +26,12 @@ export async function signOut() {
   const response = await fetch(`${endpoint}/logout`, { method: 'POST' });
   if (!response.ok) throw await readApiError(response);
 }
+
+export async function signUp(email: string, password: string, organisation: string, code: string) {
+  const response = await fetch(`${endpoint}/signup`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password, organisation, code }),
+  });
+  if (!response.ok) throw await readApiError(response);
+}

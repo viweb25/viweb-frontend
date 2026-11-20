@@ -9,7 +9,7 @@ import type { InspectionResult } from './services/api/inspection';
 
 const pages = {
   overview: { name: 'Overview', icon: '▦', description: 'Inspect parts and review results from this session.' },
-  inspection: { name: 'Inspection', icon: '◎', description: 'Check a camera frame or photo against your acceptance rule.' },
+  inspection: { name: 'Inspection', icon: '◎', description: 'Connect a camera, capture a frame, and review detections.' },
   training: { name: 'Training examples', icon: '▤', description: 'Save labeled images for a dedicated inspection model.' },
   catalogue: { name: 'Function catalogue', icon: '◇', description: 'Browse inspection templates available from the API.' },
   preferences: { name: 'Preferences', icon: '⚙', description: 'Set your workspace name and default inspection rule on this browser.' },
