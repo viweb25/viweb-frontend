@@ -81,7 +81,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       await signIn(email, password);
       form.reset();
       setRegisteredEmail('');
-      window.history.replaceState(null, '', '/#inspection');
+      window.history.replaceState(null, '', '/#overview');
       setStatus('loading');
       setAttempt(value => value + 1);
     } catch (error) {
@@ -97,7 +97,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     <div className="sign-in-shell">
       <aside className="sign-in-brand">
         <a className="brand" href="/"><span className="brand-tile" aria-hidden="true">V</span> VI WebSync</a>
-        <p>Visual inspection<br />for your team.</p>
+        <p>Check parts from a camera or photo.</p>
       </aside>
       <section className="sign-in-card" aria-labelledby="sign-in-heading">
         <h1 id="sign-in-heading">{signup ? 'Create your account' : 'Sign in'}</h1>

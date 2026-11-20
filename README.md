@@ -32,20 +32,20 @@ gateway key private. Use the backend's exact proxy policy for allowed routes.
 ## Sign up and connect a camera
 
 1. Open the HTTPS dashboard and choose **Create an account**. Enter your workspace
-   name, email, and password. After account creation, **Inspection** opens automatically.
+   name, email, and password. After account creation, **Overview** opens automatically. Select **Start a part check**.
 2. For a camera exposed as a webcam or an HDMI capture device, connect it to the
    operator PC, select it under **Camera**, and click **Start camera**. Allow
    browser access. If device names are hidden before permission is granted, start
    the default camera, stop it, then pick a device from the refreshed list.
 3. For a GigE, RTSP, or USB3 Vision camera that the browser cannot list, open the
    manufacturer's viewer on the operator PC. Start acquisition and set focus
-   and exposure in the viewer. In VI WebSync, choose **Share camera viewer**
+   and exposure in the viewer. In VI WebSync, choose **Share camera window**
    and select the corresponding window or tab. Viewer overlays can appear in
    the captured frame. You can also use **Upload image** with a saved camera JPEG.
-4. Select **YOLO object count** and enter the trained class name and expected
-   count, or select **Qwen vision rule** and enter a written acceptance rule.
-   Use **Capture & detect** to inspect a live frame in one click. For a previously
-   captured or uploaded frame, use **Detect now**.
+4. Select **Count parts** and choose the part and expected
+   count, or select **Check a written rule** and enter a written acceptance rule.
+   Use **Capture & check** to inspect a live frame in one click. For a previously
+   captured or uploaded frame, use **Check this photo**.
 5. Review the frozen detection frame, green boxes, part crops, and the decision.
    Use **Full screen** to expand the monitor. The live preview remains separate
    from the captured frame on which the decision is based.
@@ -53,8 +53,27 @@ gateway key private. Use the backend's exact proxy policy for allowed routes.
 Camera access requires HTTPS or localhost. Direct hardware triggering and
 vendor SDK acquisition require the camera model and robot or PLC interface.
 
-The **Dataset & models** dashboard page walks through private JTheta dataset
+The **Model setup** dashboard page walks through private JTheta dataset
 preparation, local YOLO training, model review, and checkpoint activation.
-**Reference images** collects frame-level labels. Create object-level bounding
+**Example photos** collects frame-level labels. Create object-level bounding
 boxes in JTheta for detector training. The inspection screen reads supported
 classes from the loaded model and lets the operator adjust the confidence threshold.
+
+
+## Dashboard menu for developers
+
+The sidebar groups operator tasks under **Daily work** and configuration under
+**Workspace setup**. Existing hash URLs remain available.
+
+| Menu | What the customer finds | Where to change it |
+| --- | --- | --- |
+| Overview | Start a check, see counting model readiness, follow a sample check, and review results from this browser session. | `src/App.tsx`, route `#overview` |
+| Check parts | Live camera or photo upload, part and count selection, check result, and crops of detected parts. | `src/InspectionDemo.tsx` in inspection mode, route `#inspection` |
+| Example photos | Save and review photos marked pass or fail as reference. | `src/InspectionDemo.tsx` in example mode, route `#training` |
+| Model setup | Directions to label a dataset, train a detector, and load the checkpoint. | `src/ModelWorkflow.tsx`, route `#models` |
+| Inspection types | Browse the API's inspection templates and see their availability. | `src/App.tsx` and `src/services/api/catalogue.ts`, route `#catalogue` |
+| Settings | See the signed-in account, sign out, and change browser workspace preferences. | `src/App.tsx` and `src/context/WorkspacePreferences.tsx`, route `#preferences` |
+
+Navigation and the session landing destination live in `src/App.tsx` and
+`src/context/SessionContext.tsx`. The shared colors and responsive layout live
+in `src/style.css`.

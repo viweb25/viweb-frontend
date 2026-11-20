@@ -6,18 +6,23 @@ import { ModelWorkflow } from './ModelWorkflow';
 import { useWorkspacePreferences } from './context/WorkspacePreferences';
 import { loadCatalogue, type Template } from './services/api/catalogue';
 import { loadHealth } from './services/api/health';
-import type { InspectionResult } from './services/api/inspection';
+import { loadDetectionModel, type DetectionModel, type InspectionResult } from './services/api/inspection';
 
 const pages = {
-  overview: { name: 'Overview', icon: '▦', description: 'Inspect parts and review results from this session.' },
-  inspection: { name: 'Inspection', icon: '◎', description: 'Connect a camera, capture a frame, and review detections.' },
-  models: { name: 'Dataset & models', icon: '◇', description: 'Prepare images, train YOLO, and connect a model to your camera.' },
-  training: { name: 'Reference images', icon: '▤', description: 'Collect frame-level PASS and FAIL examples for reference.' },
-  catalogue: { name: 'Function catalogue', icon: '◇', description: 'Browse inspection templates available from the API.' },
-  preferences: { name: 'Preferences', icon: '⚙', description: 'Set your workspace name and default inspection rule on this browser.' },
+  overview: { name: 'Overview', icon: '▦', description: 'Start here to check parts and review this session’s results.' },
+  inspection: { name: 'Check parts', icon: '◎', description: 'Connect a camera or choose a photo. Then tell us what to check.' },
+  models: { name: 'Model setup', icon: '◇', description: 'A setup guide for the person preparing your inspection model.' },
+  training: { name: 'Example photos', icon: '▤', description: 'Save photos that show acceptable parts and common issues.' },
+  catalogue: { name: 'Inspection types', icon: '▧', description: 'See which kinds of checks are available or planned.' },
+  preferences: { name: 'Settings', icon: '⚙', description: 'Manage this browser’s workspace preferences and your sign-in.' },
 } as const;
 
 type Page = keyof typeof pages;
+const menuGroups: { name: string; items: Page[] }[] = [
+  { name: 'Daily work', items: ['overview', 'inspection', 'training'] },
+  { name: 'Workspace setup', items: ['models', 'catalogue', 'preferences'] },
+];
+
 type Activity = InspectionResult & { id: number; time: Date };
 
 function currentPage(): Page {
@@ -32,6 +37,7 @@ export function App() {
   const [connection, setConnection] = useState<'checking' | 'online' | 'unavailable'>('checking');
   const [refresh, setRefresh] = useState(0);
   const [activity, setActivity] = useState<Activity[]>([]);
+  const [countingModel, setCountingModel] = useState<DetectionModel['status'] | 'checking'>('checking');
   const { preferences, update } = useWorkspacePreferences();
   const { user, logout } = useSession();
   const [signOutError, setSignOutError] = useState(false);
@@ -69,21 +75,36 @@ export function App() {
     return () => controller.abort();
   }, [refresh]);
 
+  useEffect(() => {
+    if (page !== 'overview') return;
+    const controller = new AbortController();
+    const { signal } = controller;
+    setCountingModel('checking');
+    loadDetectionModel(signal).then(model => {
+      if (!signal.aborted) setCountingModel(model.status);
+    }).catch(() => {
+      if (!signal.aborted) setCountingModel('unavailable');
+    });
+    return () => controller.abort();
+  }, [page, refresh]);
+
   function recordResult(result: InspectionResult) {
     setActivity(previous => [{ ...result, id: previous.length, time: new Date() }, ...previous]);
   }
 
   const mode = page === 'inspection' ? 'inspect' : page === 'training' ? 'training' : null;
-  const connectionLabel = { checking: 'Checking API', online: 'API connected', unavailable: 'API unavailable' };
+  const connectionLabel = { checking: 'Connecting…', online: 'Service online', unavailable: 'Service offline' };
 
   return <div className="shell">
     <aside className="sidebar">
       <a className="brand" href="#overview"><span className="brand-tile" aria-hidden="true">V</span> VI WebSync</a>
       <nav aria-label="Workspace navigation">
-        {(Object.entries(pages) as [Page, typeof pages[Page]][]).map(([key, item]) =>
-          <a key={key} href={`#${key}`} aria-current={page === key ? 'page' : undefined}>
-            <span className="nav-icon" aria-hidden="true">{item.icon}</span>{item.name}
+        {menuGroups.map(group => <div className="navigation-group" key={group.name}>
+          <span className="navigation-heading">{group.name}</span>
+          {group.items.map(key => <a key={key} href={`#${key}`} aria-current={page === key ? 'page' : undefined}>
+            <span className="nav-icon" aria-hidden="true">{pages[key].icon}</span>{pages[key].name}
           </a>)}
+        </div>)}
       </nav>
       <div className="workspace-identity">
         <span className="workspace-tile" aria-hidden="true">{workspace.slice(0, 1).toUpperCase()}</span>
@@ -95,7 +116,7 @@ export function App() {
       <header className="topbar">
         <div className="breadcrumb"><span title={workspace}>{workspace}</span><span aria-hidden="true">/</span><strong>{pages[page].name}</strong></div>
         <button type="button" className="connection" onClick={() => setRefresh(value => value + 1)}
-          title="Refresh API status and catalogue">
+          title="Check service connection">
           <span className={`status-dot ${connection}`} aria-hidden="true" />
           {connectionLabel[connection]}
         </button>
@@ -104,10 +125,42 @@ export function App() {
       <main>
         <div className="page-heading">
           <div><h1>{pages[page].name}</h1><p>{pages[page].description}</p></div>
-          {page === 'overview' && <a className="button" href="#inspection">New inspection <span aria-hidden="true">→</span></a>}
         </div>
 
         {page === 'overview' && <>
+          <section className="panel overview-start" aria-label="Start a part check">
+            <div className="overview-intro">
+              <h2>Check parts with a camera</h2>
+              <p>Count the parts in a tray from a live camera or a saved photo.
+                See which parts were found and whether the count matches.</p>
+              <div className="overview-actions">
+                <a className="button" href="#inspection">Start a part check <span aria-hidden="true">→</span></a>
+                <a className="button secondary" href="#models">Set up a model</a>
+              </div>
+              <p className={`overview-model-status ${countingModel === 'ready' ? 'ready' : ''}`} role="status">
+                {countingModel === 'ready' ? 'Counting model ready'
+                  : countingModel === 'missing' ? 'Load a counting model to check parts.'
+                  : countingModel === 'unavailable' ? 'Counting model unavailable. Check Model setup.'
+                  : 'Checking counting model…'}
+              </p>
+            </div>
+            <div className="overview-example">
+              <h3>Example check</h3>
+              <dl>
+                <div><dt>Parts expected</dt><dd>6</dd></div>
+                <div><dt>Parts found</dt><dd>5</dd></div>
+              </dl>
+              <p><span className="badge fail">FAIL</span> One part missing</p>
+            </div>
+          </section>
+          <section className="overview-steps" aria-labelledby="overview-steps-heading">
+            <h2 id="overview-steps-heading">How to run a check</h2>
+            <ol>
+              <li><strong>Choose a camera or photo</strong><span>Start a camera, share its viewer, or upload an image.</span></li>
+              <li><strong>Set the expected count</strong><span>Choose the part and enter how many should be in view.</span></li>
+              <li><strong>Check and review</strong><span>See the boxes around each part and the pass or fail result.</span></li>
+            </ol>
+          </section>
           <div className="stats-grid" aria-label="Inspection totals for this session">
             <article className="panel stat"><span className="stat-icon total" aria-hidden="true">◎</span><span>Inspections</span><strong>{activity.length}</strong></article>
             {(['PASS', 'FAIL', 'HOLD'] as const).map(decision =>
@@ -136,15 +189,14 @@ export function App() {
             </div>}
           </section>
           <section className="quick-links" aria-label="Workspace tools">
-            <a className="panel shortcut" href="#models"><span className="nav-icon" aria-hidden="true">◇</span><span><strong>Dataset &amp; models</strong><small>Prepare images and train YOLO</small></span><span aria-hidden="true">→</span></a>
-            <a className="panel shortcut" href="#training"><span className="nav-icon" aria-hidden="true">▤</span><span><strong>Reference images</strong><small>Save PASS and FAIL examples</small></span><span aria-hidden="true">→</span></a>
-            <a className="panel shortcut" href="#catalogue"><span className="nav-icon" aria-hidden="true">◇</span><span><strong>Function catalogue</strong><small>{templates ? `${templates.length} templates` : 'Browse inspection templates'}</small></span><span aria-hidden="true">→</span></a>
+            <a className="panel shortcut" href="#models"><span className="nav-icon" aria-hidden="true">◇</span><span><strong>Model setup</strong><small>See how to prepare and load a model</small></span><span aria-hidden="true">→</span></a>
+            <a className="panel shortcut" href="#training"><span className="nav-icon" aria-hidden="true">▤</span><span><strong>Example photos</strong><small>Save examples of good parts and issues</small></span><span aria-hidden="true">→</span></a>
+            <a className="panel shortcut" href="#catalogue"><span className="nav-icon" aria-hidden="true">◇</span><span><strong>Inspection types</strong><small>{templates ? `${templates.length} templates` : 'Browse inspection templates'}</small></span><span aria-hidden="true">→</span></a>
           </section>
         </>}
 
         {page === 'models' && <ModelWorkflow />}
-        {page === 'training' && <p className="notice">These frame labels are for reference. For YOLO training,
-          annotate each object with a bounding box in <a href="#models">Dataset &amp; models</a>.</p>}
+        {page === 'training' && <p className="notice">Save a photo with a pass or fail label. For object detection training, follow the <a href="#models">model setup guide</a>.</p>}
         <InspectionDemo mode={mode} onResult={recordResult} />
 
         {page === 'catalogue' && <>
@@ -152,7 +204,7 @@ export function App() {
           {!templates && !catalogueError && <p role="status" className="muted">Loading catalogue…</p>}
           {templates?.length === 0 && <p className="muted">No templates available.</p>}
           <div className="card-grid">{templates?.map(item => <article className="panel" key={item.id}>
-            <h2>{item.name}</h2><p className="muted">{item.stage}</p>
+            <h2>{item.name}</h2><p className="muted">{item.stage.startsWith('planned') ? 'Planned' : item.stage}</p>
           </article>)}</div>
         </>}
 

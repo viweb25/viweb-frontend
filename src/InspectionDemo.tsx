@@ -270,11 +270,11 @@ export function InspectionDemo({ mode, onResult }: {
 
   return <>
     <div className="workbench camera-workbench">
-      <article className="panel">
+      <article className="panel camera-card">
         <div className="camera-heading">
           <h2>Camera station</h2>
           <span className={cameraReady ? 'camera-state live' : 'camera-state'}>
-            {cameraReady ? '● Live' : activeSource ? 'Connecting…' : 'Camera offline'}
+            {cameraReady ? 'Live camera' : activeSource ? 'Connecting…' : 'Camera stopped'}
           </span>
         </div>
         {cameraSupported ? <>
@@ -289,19 +289,18 @@ export function InspectionDemo({ mode, onResult }: {
               </option>)}
             </select>
           </label>
-        </> : <p className="muted">Use a supported browser on localhost or an HTTPS dashboard for live camera access.</p>}
+        </> : <p className="muted">Camera access is unavailable on this page. You can still upload a photo.</p>}
         {(cameraSupported || activeSource) && <div className="demo-actions">
           {activeSource ? <button className="secondary" disabled={busy} onClick={stopVideo}>
             Stop {activeSource === 'camera' ? 'camera' : 'sharing'}
           </button> : <button className="secondary" disabled={busy} onClick={() => startVideo('camera')}>
             Start camera
           </button>}
-
         </div>}
         <div className="demo-actions">
           {sharingSupported && <button className="secondary" disabled={busy || !!activeSource}
             onClick={() => startVideo('viewer')}>
-            Share camera viewer
+            Share camera window
           </button>}
           <button className="secondary" disabled={busy} onClick={() => photoInput.current?.click()}>
             Take a photo
@@ -314,7 +313,7 @@ export function InspectionDemo({ mode, onResult }: {
           <input ref={uploadInput} type="file" accept="image/*" hidden onChange={choosePhoto} />
         </div>
         <details className="camera-help">
-          <summary>Which option should I use?</summary>
+          <summary>Help connecting your camera</summary>
           <ul>
             <li>For a webcam, USB camera, or HDMI capture device, select the camera and click Start camera.</li>
             <li>On a phone or tablet, Take a photo opens the device camera when supported. Upload image opens a saved photo.</li>
@@ -332,20 +331,20 @@ export function InspectionDemo({ mode, onResult }: {
           </div>
           <video className="demo-image" ref={video} hidden={!cameraReady} muted playsInline
             onPlaying={() => { if (stream.current) setCameraReady(true); }} />
-          {!cameraReady && <div className="image-placeholder">Start the camera or share its viewer to see the live feed.</div>}
+          {!cameraReady && <div className="image-placeholder">Start a camera to see the live picture here.</div>}
           {activeSource && <div className="demo-actions">
           {!training && <button disabled={!cameraReady || !canInspect || busy}
-            onClick={() => void capture(true)}>Capture &amp; detect</button>}
-          <button className="secondary" disabled={!cameraReady || busy} onClick={() => void capture()}>Capture frame</button>
+            onClick={() => void capture(true)}>Capture &amp; check</button>}
+          <button className="secondary" disabled={!cameraReady || busy} onClick={() => void capture()}>Take a snapshot</button>
           </div>}
           {!training && cameraReady && !canInspect && (engine === 'qwen' || model?.status === 'ready') &&
-            <p className="muted">Set the inspection rule or target class and count before capturing and detecting.</p>}
+            <p className="muted">Finish setting up your check, then capture a photo.</p>}
           <div className="camera-heading">
-            <h3>{result ? 'Detection frame' : 'Captured frame'}</h3>
+            <h3>{result ? 'Checked photo' : 'Photo to check'}</h3>
             {result && <span className={`badge ${result.decision.toLowerCase()}`}>{result.decision}</span>}
           </div>
           {preview
-          ? <div className="detection-preview">
+          ? <div className={`detection-preview ${!training && result ? `frame-${result.decision.toLowerCase()}` : ''}`}>
             <img src={preview} alt="Selected image" onLoad={event => {
               const { naturalWidth, naturalHeight } = event.currentTarget;
               setFrameRatio(naturalWidth / naturalHeight);
@@ -359,14 +358,14 @@ export function InspectionDemo({ mode, onResult }: {
               </div>
             ))}
           </div>
-          : <div className="image-placeholder">Capture a frame or upload an image</div>}
+          : <div className="image-placeholder photo-placeholder">Take a snapshot or upload a photo.</div>}
         </div>
         {message && <p className="muted" role="status">{message}</p>}
       </article>
-      <article className="panel">
-        <h2>{training ? 'Label example' : 'Inspection result'}</h2>
+      <article className="panel check-card">
+        <h2>{training ? 'Save an example' : 'Set up your check'}</h2>
         {training ? <>
-          <label className="demo-field">Physical part ID
+          <label className="demo-field">Part reference
             <input value={partId} onChange={event => setPartId(event.target.value)}
               maxLength={80} placeholder="Enter the part ID" disabled={busy} />
           </label>
@@ -377,58 +376,72 @@ export function InspectionDemo({ mode, onResult }: {
           </div>
           {availability && <p className="notice" role="status">{availability}</p>}
         </> : <>
-          <label className="demo-field">Inspection model
+          <label className="demo-field">How should we check this photo?
             <select value={engine} disabled={busy} onChange={event => {
               setEngine(event.target.value === 'yolo' ? 'yolo' : 'qwen');
               setCompleted(null);
             }}>
-              <option value="qwen">Qwen vision rule</option>
-              <option value="yolo">YOLO object count</option>
+              <option value="qwen">Check a written rule</option>
+              <option value="yolo">Count parts</option>
             </select>
           </label>
           {engine === 'yolo' ? <>
-            <div className="result-box" role="status">
-              {model?.status === 'ready' ? <>Loaded model <strong>{model.model}</strong></>
-                : modelError || model?.status === 'unavailable' ? 'The YOLO model could not be loaded.'
-                : model?.status === 'missing' ? 'No YOLO checkpoint is loaded.' : 'Checking for a YOLO model…'}
-              {model?.status !== 'ready' && <p><a href="#models">Set up a YOLO model</a></p>}
+            <div className="model-status" role="status">
+              {model?.status === 'ready' ? <><strong>Ready to count</strong><small>Model: {model.model}</small></>
+                : modelError || model?.status === 'unavailable' ? 'The counting model isn’t available.'
+                : model?.status === 'missing' ? 'No counting model is ready.' : 'Checking model availability…'}
+              {model?.status !== 'ready' && <p><a href="#models">Open model setup</a></p>}
               <button type="button" className="secondary" disabled={busy}
                 onClick={() => { setCompleted(null); setModelRefresh(value => value + 1); }}>Refresh model</button>
             </div>
-            <label className="demo-field">Object to detect
+            <label className="demo-field">Part to count
               <select value={target} disabled={busy || model?.status !== 'ready'} onChange={event => {
                 setTarget(event.target.value);
                 setCompleted(null);
               }}>
-                <option value="">Choose a class</option>
+                <option value="">Choose a part</option>
                 {model?.classes.map(label => <option key={label}>{label}</option>)}
               </select>
             </label>
-            <label className="demo-field">Expected count
+            <label className="demo-field">How many should be there?
               <input type="number" min={1} max={999} value={expectedCount} disabled={busy}
                 onChange={event => { setExpectedCount(event.target.value); setCompleted(null); }} />
             </label>
-            <label className="demo-field">Minimum confidence (%)
-              <input type="number" min={1} max={100} value={confidence} disabled={busy}
-                onChange={event => { setConfidence(event.target.value); setCompleted(null); }} />
-            </label>
-          </> : <label className="demo-field">Acceptance rule
+            <details className="check-options">
+              <summary>Advanced settings</summary>
+              <label className="demo-field">Minimum confidence (%)
+                <input type="number" min={1} max={100} value={confidence} disabled={busy}
+                  onChange={event => { setConfidence(event.target.value); setCompleted(null); }} />
+              </label>
+              <p className="muted">Parts below this confidence level aren’t counted.</p>
+            </details>
+          </> : <label className="demo-field">What should a good part look like?
             <textarea value={rule} maxLength={400} disabled={busy} rows={4}
-              placeholder="Describe what an acceptable part looks like"
+              placeholder="For example, each package should have a readable label."
               onChange={event => { update({ acceptanceRule: event.target.value }); setCompleted(null); }} />
           </label>}
-          <button disabled={!image || !canInspect || busy} onClick={() => void inspect(image)}>Detect now <span aria-hidden="true">→</span></button>
-          <div className="result-box" role="status">
-            {inspecting ? 'Inspecting image…' : result
-              ? <><strong className={`badge ${result.decision.toLowerCase()}`}>{result.decision}</strong>
-                <p>{result.reason}</p>{result.model && <small>{result.model}</small>}</>
-              : 'The model decision will appear here.'}
-          </div>
+          {engine === 'yolo' && model?.status === 'ready' && !target &&
+            <p className="muted">{model.classes.includes('person')
+              ? 'For a quick test, choose person, set the count to 1, and put one person in view.'
+              : 'Choose the part you want to count.'}</p>}
+          <button disabled={!image || !canInspect || busy} onClick={() => void inspect(image)}>Check this photo <span aria-hidden="true">→</span></button>
+          <section className="check-result" aria-labelledby="check-result-heading">
+            <h3 id="check-result-heading">Check result</h3>
+            <div className="result-box" role="status">
+              {inspecting ? 'Checking photo…' : result
+                ? <><strong className={`badge ${result.decision.toLowerCase()}`}>{result.decision}</strong>
+                  <p>{result.reason}</p>
+                  {engine === 'yolo' && result.detections && <small>
+                    Green boxes show parts found. The photo border shows the overall result.
+                  </small>}</>
+                : 'Run a check to see whether the photo passes.'}
+            </div>
+          </section>
         </>}
       </article>
     </div>
     {!training && preview && !!result?.detections?.length && <section className="panel saved-panel">
-      <h2>Detected parts</h2>
+      <h2>Parts found</h2>
       <div className="detection-crops">
         {result.detections.map((box, index) => {
           const width = box.x2 - box.x1;
