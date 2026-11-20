@@ -77,3 +77,11 @@ The sidebar groups operator tasks under **Daily work** and configuration under
 Navigation and the session landing destination live in `src/App.tsx` and
 `src/context/SessionContext.tsx`. The shared colors and responsive layout live
 in `src/style.css`.
+
+
+For a first camera test with the starter detector, choose **Count parts** and
+click **Use person demo**. This sets the part to person and the expected count to
+one. Put one person in view and click **Capture & check**. To show a count
+mismatch with the same photo, set the expected count to two and click
+**Check this photo**. The results show both the expected and found counts.
+The preset appears only when the loaded model supports the person class.
