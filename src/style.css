@@ -275,7 +275,7 @@ video.demo-image { margin-top: 12px; }
 
 .model-workflow {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
+  max-width: 780px;
   gap: 16px;
 }
 
@@ -284,22 +284,12 @@ video.demo-image { margin-top: 12px; }
   line-height: 1.6;
 }
 
-.workflow-stage header {
-  margin-bottom: 16px;
-}
-
 .workflow-stage p, .workflow-stage li {
   color: var(--muted);
 }
 
 .workflow-stage li + li {
   margin-top: 8px;
-}
-
-.workflow-link {
-  display: inline-block;
-  margin: 10px 12px;
-  text-decoration: underline;
 }
 
 .workflow-command pre {
@@ -316,52 +306,15 @@ video.demo-image { margin-top: 12px; }
   font-size: .85rem;
 }
 
-.overview-start {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(200px, 275px);
-  align-items: center;
-  gap: clamp(20px, 4vw, 56px);
-  margin-bottom: 24px;
-  padding: clamp(20px, 3vw, 36px);
-  border-left: 4px solid var(--accent);
-}
-
-.overview-intro h2 { margin-bottom: 10px; font-size: clamp(1.55rem, 3vw, 2.35rem); line-height: 1.14; letter-spacing: -.035em; }
-.overview-intro p { margin: 0; color: var(--muted); max-width: 52ch; }
-.overview-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
-.overview-intro .overview-model-status { margin-top: 14px; font-size: .85rem; }
-.overview-model-status.ready { color: #186444; }
-
-.overview-example {
-  padding: 16px;
-  border: 1px solid #d1e1f3;
-  border-radius: 10px;
-  background: var(--blue-soft);
-}
-
-.overview-example h3 { color: var(--blue); margin: 0; font-size: .85rem; }
-.overview-example dl { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 16px 0; }
-.overview-example dt { font-size: .8rem; color: var(--muted); }
-.overview-example dd { margin: 3px 0 0; color: var(--blue); font-size: 1.65rem; font-weight: 750; }
-.overview-example p { display: flex; align-items: center; gap: 8px; margin: 0; font-size: .85rem; }
-
-.overview-steps { margin-bottom: 24px; }
-.overview-steps ol { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; list-style: none; counter-reset: check-step; margin: 0; padding: 0; }
-.overview-steps li { position: relative; counter-increment: check-step; padding: 14px 14px 14px 48px; border: 1px solid var(--line); border-radius: 9px; background: white; font-size: .875rem; }
-.overview-steps li::before { content: counter(check-step); position: absolute; left: 13px; top: 13px; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 6px; color: var(--blue); background: var(--blue-soft); font-weight: 750; }
-.overview-steps li span { display: block; margin-top: 4px; color: var(--muted); line-height: 1.45; }
-
 .camera-card, .check-card { min-width: 0; }
 .camera-heading h2 { margin: 0; }
+.camera-card .camera-help { margin-bottom: 8px; }
+.saved-panel > summary { cursor: pointer; font-weight: 650; }
 .camera-monitor .image-placeholder {
   min-height: clamp(150px, 26vw, 350px);
   border: 1px solid #294867;
   color: #e2ecfa;
   background: #152d4c;
-}
-
-.camera-monitor .photo-placeholder {
-  min-height: 110px;
 }
 
 .check-card > button { width: 100%; }
@@ -370,31 +323,14 @@ video.demo-image { margin-top: 12px; }
 .check-result { margin-top: 22px; border-top: 1px solid var(--line); padding-top: 16px; }
 .check-result h3 { font-size: .95rem; margin: 0; }
 .check-result .result-box { margin-top: 8px; }
-.model-status {
-  padding: 12px;
-  border-radius: 8px;
-  background: var(--blue-soft);
-  color: #19395f;
-  font-size: .875rem;
-}
-.model-status small { display: block; margin-top: 4px; color: var(--muted); }
-.model-status a { text-decoration: underline; }
-.model-status button { margin-top: 8px; }
-
 @media (max-width: 850px) {
   .camera-workbench { grid-template-columns: 1fr; }
-}
-
-@media (max-width: 480px) {
-  .overview-start .button { width: 100%; }
 }
 
 @media (max-width: 700px) {
   .sidebar nav { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
   .navigation-group { display: contents; }
   .navigation-heading { display: none; }
-  .overview-start { grid-template-columns: 1fr; }
-  .overview-steps ol { grid-template-columns: 1fr; }
   .sidebar nav a { justify-content: center; padding: 6px; text-align: center; font-size: .8rem; }
   .sidebar nav .nav-icon { display: none; }
 }
@@ -414,55 +350,6 @@ video.demo-image { margin-top: 12px; }
 .detection-preview.frame-fail { --frame-outline: #dc2626; }
 .detection-preview.frame-hold { --frame-outline: #d97706; }
 
-.source-options:not(:empty) {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
-  gap: 10px;
-  margin-top: 14px;
-}
-
-.source-option {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  font-size: .875rem;
-}
-
-.source-option .demo-field { width: 100%; margin: 0 0 10px; }
-.source-option p { color: var(--muted); margin: 6px 0 10px; }
-.source-option button { margin-top: auto; }
-
-.check-method { margin: 16px 0; padding: 0; border: 0; min-width: 0; }
-.check-method legend { margin-bottom: 9px; font-size: .875rem; font-weight: 700; }
-.check-method-options { display: grid; gap: 7px; }
-.check-method-options label {
-  display: flex;
-  align-items: start;
-  gap: 9px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 10px;
-  cursor: pointer;
-  font-size: .875rem;
-}
-.check-method-options label.selected { background: var(--blue-soft); border-color: #aac5e6; }
-.check-method-options input { margin: 2px 0 0; accent-color: var(--blue); }
-.check-method-options small { display: block; color: var(--muted); margin-top: 2px; }
-
-.demo-preset {
-  margin-top: 12px;
-  padding: 12px;
-  border: 1px solid #ebc9b2;
-  border-radius: 8px;
-  background: var(--accent-soft);
-  font-size: .875rem;
-}
-.demo-preset p { margin: 4px 0 8px; color: var(--muted); }
-.check-next-step { color: var(--muted); font-size: .85rem; }
-.check-next-step strong { display: block; color: var(--blue); }
 .check-counts { display: flex; gap: 28px; margin: 12px 0 0; }
 .check-counts dt { color: var(--muted); font-size: .8rem; }
 .check-counts dd { margin: 0; font-weight: 750; font-size: 1.45rem; }

@@ -1,7 +1,8 @@
 import { useState } from 'react';
 
-const train = 'docker compose --profile training run --build --rm trainer';
-const activate = 'cp runs/object-detection/weights/best.pt models/best.pt\nINFERENCE_TARGET=yolo docker compose up -d --build --wait\ndocker compose restart inference';
+const compose = 'docker compose -f compose.yaml -f compose.separate.yaml';
+const train = `${compose} --profile training run --build --rm trainer`;
+const activate = `cp "runs/<run-folder>/weights/best.pt" models/best.pt &&\n${compose} restart inference`;
 
 function Command({ command }: { command: string }) {
   const [copyStatus, setCopyStatus] = useState('');
@@ -22,44 +23,40 @@ function Command({ command }: { command: string }) {
 export function ModelWorkflow() {
   return <div className="model-workflow">
     <article className="panel workflow-stage">
-      <header><h2>Prepare training photos</h2><p>Use your industrial camera and label what the model should find.</p></header>
+      <h2>Prepare camera photos</h2>
       <ol>
-        <li>Capture full frames at the working distance and lighting. Include correctly arranged parts,
-          missing or extra parts, different orientations, and empty frames.</li>
-        <li>Create a private Object Detection project in JTheta.ai and name the dataset, for example
-          <code> line-01-cap-detection-v1</code>. Upload the frames and add a class for each object,
-          such as <code>cap</code> or <code>washer</code>.</li>
-        <li>Use AI-assisted pre-labeling where available. Review and correct every bounding box.
-          Split by production batch or capture session, then export YOLO detection format.</li>
-        <li>Extract the export into <code>viweb-local-stack/datasets/</code>. Put
-          <code> data.yaml</code> at that folder’s top level. Use <code>path: .</code> and relative image directories for each split.</li>
+        <li>Capture your own line under normal production conditions. Include good parts,
+          missing and extra parts, and empty frames.</li>
+        <li>Draw a box around each part you want to count and give it a class, such as <code>cap</code>.
+          Export in YOLO detection format.</li>
+        <li>Split by batch or capture session into training, validation, and test sets.
+          Extract the export to <code>viweb-local-stack/datasets/</code> with
+          <code> data.yaml</code> at its top level.</li>
       </ol>
-      <a className="button secondary" href="https://jtheta.ai/" target="_blank" rel="noreferrer">Open JTheta.ai</a>
-      <a className="workflow-link" href="#training">Open example photos</a>
     </article>
     <article className="panel workflow-stage">
-      <header><h2>Train the model</h2><p>Fine-tune an Ultralytics YOLO detector on the exported boxes and classes.</p></header>
-      <p>Run from <code>viweb-local-stack</code>. The trainer prints progress and saves the candidate
-        checkpoint, validation charts, and <code>results.csv</code> under <code>runs/</code>.</p>
+      <h2>Fine-tune YOLO</h2>
+      <p>Start with the pretrained YOLO11n model and teach it your part classes.
+        Run this from <code>viweb-local-stack</code>.</p>
       <Command command={train} />
-      <p>Review precision, recall, and mAP together with predictions on held-out camera frames.
-        Check normal, missing-part, and extra-part cases before choosing a checkpoint.</p>
+      <p>Add <code>--epochs 1</code> for a quick dataset and trainer check.</p>
+      <details className="check-options">
+        <summary>Train with new weights from scratch</summary>
+        <p>This uses the YOLO11n architecture with randomly initialized weights.
+          It typically needs more labeled data and compute.</p>
+        <Command command={`${train} --from-scratch`} />
+        <p>Building your own architecture is a separate project. First measure the fine-tuned model
+          on held-out production images to see which errors a new design would need to solve.</p>
+      </details>
     </article>
     <article className="panel workflow-stage">
-      <header><h2>Make the model available</h2><p>Promote a reviewed checkpoint to the inspection service.</p></header>
+      <h2>Test and load</h2>
+      <p>Review the results under <code>runs/</code>. Check for missed parts and false detections on
+        held-out images, including trays with missing or extra parts.</p>
+      <p>Use the run folder printed by the trainer in place of <code>&lt;run-folder&gt;</code>.</p>
       <Command command={activate} />
-      <p>Replace <code>runs/object-detection</code> with the actual run folder printed by the trainer.
-        Restarting inference reloads the checkpoint.</p>
-    </article>
-    <article className="panel workflow-stage">
-      <header><h2>Try a part check</h2><p>See what the camera sees, then run detection on a captured frame.</p></header>
-      <ol>
-        <li>Select a browser-visible camera or share the industrial camera’s manufacturer viewer.</li>
-        <li>Choose a trained class and set the expected count. Click <strong>Capture &amp; check</strong>,
-          or upload a saved frame and choose <strong>Check this photo</strong>.</li>
-        <li>Review the boxes, confidence scores, individual crops, and the PASS, FAIL, or HOLD result.</li>
-      </ol>
-      <a className="button" href="#inspection">Open Check parts</a>
+      <p>Open <a href="#inspection">Check parts</a>, expand Model settings, and select Refresh model.
+        Choose your part class and try a saved production photo.</p>
     </article>
   </div>;
 }

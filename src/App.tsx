@@ -6,12 +6,12 @@ import { ModelWorkflow } from './ModelWorkflow';
 import { useWorkspacePreferences } from './context/WorkspacePreferences';
 import { loadCatalogue, type Template } from './services/api/catalogue';
 import { loadHealth } from './services/api/health';
-import { loadDetectionModel, type DetectionModel, type InspectionResult } from './services/api/inspection';
+import { type InspectionResult } from './services/api/inspection';
 
 const pages = {
   overview: { name: 'Overview', icon: '▦', description: 'Start here to check parts and review this session’s results.' },
   inspection: { name: 'Check parts', icon: '◎', description: 'Connect a camera or choose a photo. Then tell us what to check.' },
-  models: { name: 'Model setup', icon: '◇', description: 'A setup guide for the person preparing your inspection model.' },
+  models: { name: 'Train a model', icon: '◇', description: 'Use labeled photos from your own production line.' },
   training: { name: 'Example photos', icon: '▤', description: 'Save photos that show acceptable parts and common issues.' },
   catalogue: { name: 'Inspection types', icon: '▧', description: 'See which kinds of checks are available or planned.' },
   preferences: { name: 'Settings', icon: '⚙', description: 'Manage this browser’s workspace preferences and your sign-in.' },
@@ -27,7 +27,7 @@ type Activity = InspectionResult & { id: number; time: Date };
 
 function currentPage(): Page {
   const hash = window.location.hash.slice(1);
-  return Object.hasOwn(pages, hash) ? hash as Page : 'overview';
+  return Object.hasOwn(pages, hash) ? hash as Page : 'inspection';
 }
 
 export function App() {
@@ -37,7 +37,6 @@ export function App() {
   const [connection, setConnection] = useState<'checking' | 'online' | 'unavailable'>('checking');
   const [refresh, setRefresh] = useState(0);
   const [activity, setActivity] = useState<Activity[]>([]);
-  const [countingModel, setCountingModel] = useState<DetectionModel['status'] | 'checking'>('checking');
   const { preferences, update } = useWorkspacePreferences();
   const { user, logout } = useSession();
   const [signOutError, setSignOutError] = useState(false);
@@ -74,19 +73,6 @@ export function App() {
     }).catch(() => { if (!signal.aborted) setCatalogueError(true); });
     return () => controller.abort();
   }, [refresh]);
-
-  useEffect(() => {
-    if (page !== 'overview') return;
-    const controller = new AbortController();
-    const { signal } = controller;
-    setCountingModel('checking');
-    loadDetectionModel(signal).then(model => {
-      if (!signal.aborted) setCountingModel(model.status);
-    }).catch(() => {
-      if (!signal.aborted) setCountingModel('unavailable');
-    });
-    return () => controller.abort();
-  }, [page, refresh]);
 
   function recordResult(result: InspectionResult) {
     setActivity(previous => [{ ...result, id: previous.length, time: new Date() }, ...previous]);
@@ -128,50 +114,6 @@ export function App() {
         </div>
 
         {page === 'overview' && <>
-          <section className="panel overview-start" aria-label="Start a part check">
-            <div className="overview-intro">
-              <h2>Check parts with a camera</h2>
-              <p>Count the parts in a tray from a live camera or a saved photo.
-                See which parts were found and whether the count matches.</p>
-              <div className="overview-actions">
-                <a className="button" href="#inspection">Start a part check <span aria-hidden="true">→</span></a>
-                <a className="button secondary" href="#models">Set up a model</a>
-              </div>
-              <p className={`overview-model-status ${countingModel === 'ready' ? 'ready' : ''}`} role="status">
-                {countingModel === 'ready' ? 'Counting model ready'
-                  : countingModel === 'missing' ? 'Load a counting model to check parts.'
-                  : countingModel === 'unavailable' ? 'Counting model unavailable. Check Model setup.'
-                  : 'Checking counting model…'}
-              </p>
-            </div>
-            <div className="overview-example">
-              <h3>Example check</h3>
-              <dl>
-                <div><dt>Parts expected</dt><dd>6</dd></div>
-                <div><dt>Parts found</dt><dd>5</dd></div>
-              </dl>
-              <p><span className="badge fail">FAIL</span> One part missing</p>
-            </div>
-          </section>
-          <section className="overview-steps" aria-labelledby="overview-steps-heading">
-            <h2 id="overview-steps-heading">How to run a check</h2>
-            <ol>
-              <li><strong>Choose a camera or photo</strong><span>Start a camera, share its viewer, or upload an image.</span></li>
-              <li><strong>Set the expected count</strong><span>Choose the part and enter how many should be in view.</span></li>
-              <li><strong>Check and review</strong><span>See the boxes around each part and the pass or fail result.</span></li>
-            </ol>
-          </section>
-          <div className="stats-grid" aria-label="Inspection totals for this session">
-            <article className="panel stat"><span className="stat-icon total" aria-hidden="true">◎</span><span>Inspections</span><strong>{activity.length}</strong></article>
-            {(['PASS', 'FAIL', 'HOLD'] as const).map(decision =>
-              <article className="panel stat" key={decision}>
-                <span className={`stat-icon ${decision.toLowerCase()}`} aria-hidden="true">
-                  {{ PASS: '✓', FAIL: '×', HOLD: '!' }[decision]}
-                </span>
-                <span>{{ PASS: 'Passed', FAIL: 'Failed', HOLD: 'On hold' }[decision]}</span>
-                <strong>{activity.filter(item => item.decision === decision).length}</strong>
-              </article>)}
-          </div>
           <section className="panel activity">
             <div className="section-heading"><div><h2>Recent inspections</h2><p>Current browser session</p></div></div>
             {activity.length ? <div className="table-scroll">
@@ -188,15 +130,10 @@ export function App() {
               <a href="#inspection">Run an inspection <span aria-hidden="true">→</span></a>
             </div>}
           </section>
-          <section className="quick-links" aria-label="Workspace tools">
-            <a className="panel shortcut" href="#models"><span className="nav-icon" aria-hidden="true">◇</span><span><strong>Model setup</strong><small>See how to prepare and load a model</small></span><span aria-hidden="true">→</span></a>
-            <a className="panel shortcut" href="#training"><span className="nav-icon" aria-hidden="true">▤</span><span><strong>Example photos</strong><small>Save examples of good parts and issues</small></span><span aria-hidden="true">→</span></a>
-            <a className="panel shortcut" href="#catalogue"><span className="nav-icon" aria-hidden="true">◇</span><span><strong>Inspection types</strong><small>{templates ? `${templates.length} templates` : 'Browse inspection templates'}</small></span><span aria-hidden="true">→</span></a>
-          </section>
         </>}
 
         {page === 'models' && <ModelWorkflow />}
-        {page === 'training' && <p className="notice">Save a photo with a pass or fail label. For object detection training, follow the <a href="#models">model setup guide</a>.</p>}
+        {page === 'training' && <p className="notice">These photos record pass or fail examples. To train a part detector, <a href="#models">label each part with a bounding box</a>.</p>}
         <InspectionDemo mode={mode} onResult={recordResult} />
 
         {page === 'catalogue' && <>

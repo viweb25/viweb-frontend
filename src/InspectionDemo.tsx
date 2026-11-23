@@ -268,12 +268,6 @@ export function InspectionDemo({ mode, onResult }: {
 
   const modelReady = model?.status === 'ready';
   const personDemoAvailable = engine === 'yolo' && modelReady && model.classes.includes('person');
-  const nextStep = engine === 'yolo' && !modelReady ? 'Load a counting model or choose another check.'
-    : !canInspect ? 'Choose what you want to check.'
-      : image ? 'Click Check this photo to see the result.'
-        : cameraReady ? 'Click Capture & check below the live video.'
-          : 'Start a camera or upload a photo.';
-
   function selectEngine(value: 'yolo' | 'qwen') {
     setEngine(value);
     setCompleted(null);
@@ -292,79 +286,67 @@ export function InspectionDemo({ mode, onResult }: {
     <div className="workbench camera-workbench">
       <article className="panel camera-card">
         <div className="camera-heading">
-          <h2>Camera station</h2>
+          <h2>Image</h2>
           <span className={cameraReady ? 'camera-state live' : 'camera-state'}>
-            {cameraReady ? 'Live camera' : activeSource ? 'Connecting…' : 'Camera stopped'}
+            {cameraReady ? 'Live camera' : activeSource ? 'Connecting…' : 'Camera off'}
           </span>
         </div>
-        <div className="source-options" aria-label="Choose an image source">
-          {cameraSupported && <div className="source-option">
-            <label className="demo-field">Camera on this computer
-              <select value={cameraChoice} disabled={busy || !!activeSource}
-                onChange={event => setCameraChoice(event.target.value)}>
-                <option value="default">Default camera</option>
-                {navigator.mediaDevices.getSupportedConstraints().facingMode &&
-                  <option value="rear">Rear camera (if available)</option>}
-                {cameras.map((camera, index) => <option key={camera.deviceId} value={`device:${camera.deviceId}`}>
-                  {camera.label || `Camera ${index + 1}`}
-                </option>)}
-              </select>
-            </label>
-            <button className="secondary" disabled={busy || !!activeSource}
-              onClick={() => void startVideo('camera')}>Start camera</button>
-          </div>}
-          {sharingSupported && <div className="source-option">
-            <strong>Industrial camera viewer</strong>
-            <p>Open the camera’s own software and start its live video first.</p>
-            <button className="secondary" disabled={busy || !!activeSource}
-              onClick={() => void startVideo('viewer')}>Share camera window</button>
-          </div>}
-        </div>
         <div className="demo-actions">
+          <button className="secondary" disabled={busy} onClick={() => uploadInput.current?.click()}>
+            Upload photo
+          </button>
+          {cameraSupported && <button className="secondary" disabled={busy || !!activeSource}
+            onClick={() => void startVideo('camera')}>Start camera</button>}
           {activeSource && <button className="secondary" disabled={busy} onClick={stopVideo}>
             {activeSource === 'camera' ? 'Stop camera' : 'Stop sharing'}
           </button>}
-          <button className="secondary" disabled={busy} onClick={() => photoInput.current?.click()}>
-            Take a photo
-          </button>
-          <button className="secondary" disabled={busy} onClick={() => uploadInput.current?.click()}>
-            Upload image
-          </button>
           <input ref={photoInput} type="file" accept="image/*" capture="environment" hidden
             onChange={choosePhoto} />
           <input ref={uploadInput} type="file" accept="image/*" hidden onChange={choosePhoto} />
         </div>
         <details className="camera-help">
-          <summary>Help connecting your camera</summary>
-          <ul>
-            <li>For a webcam, USB camera, or HDMI capture device, select the camera and click Start camera.</li>
-            <li>On a phone or tablet, Take a photo opens the device camera when supported. Upload image opens a saved photo.</li>
-            <li>For CCTV or industrial cameras, open the live feed in its viewer, then share that window or tab in a supported desktop browser.</li>
-          </ul>
+          <summary>More camera options</summary>
+          {cameraSupported && <label className="demo-field">Camera
+            <select value={cameraChoice} disabled={busy || !!activeSource}
+              onChange={event => setCameraChoice(event.target.value)}>
+              <option value="default">Default camera</option>
+              {navigator.mediaDevices.getSupportedConstraints().facingMode &&
+                <option value="rear">Rear camera (if available)</option>}
+              {cameras.map((camera, index) => <option key={camera.deviceId} value={`device:${camera.deviceId}`}>
+                {camera.label || `Camera ${index + 1}`}
+              </option>)}
+            </select>
+          </label>}
+          <div className="demo-actions">
+            <button className="secondary" disabled={busy} onClick={() => photoInput.current?.click()}>
+              Take a photo
+            </button>
+            {sharingSupported && <button className="secondary" disabled={busy || !!activeSource}
+              onClick={() => void startVideo('viewer')}>Share camera window</button>}
+          </div>
+          {sharingSupported && <p className="muted">Open the industrial camera’s live viewer before sharing it.</p>}
         </details>
         <div className="camera-monitor" ref={monitor}>
-          <div className="camera-heading">
+          {activeSource && <div className="camera-heading">
             <h3>Live feed</h3>
             {document.fullscreenEnabled && <button className="secondary" type="button" onClick={() => {
               const fullscreen = document.fullscreenElement ? document.exitFullscreen()
                 : monitor.current?.requestFullscreen();
               void fullscreen?.catch(() => setMessage('Full screen is unavailable in this browser.'));
             }}>Full screen</button>}
-          </div>
+          </div>}
           <video className="demo-image" ref={video} hidden={!cameraReady} muted playsInline
             onPlaying={() => { if (stream.current) setCameraReady(true); }} />
-          {!cameraReady && <div className="image-placeholder">Start a camera to see the live picture here.</div>}
+          {activeSource && !cameraReady && <div className="image-placeholder">Waiting for the live feed…</div>}
           {activeSource && <div className="demo-actions">
-          {!training && <button disabled={!cameraReady || !canInspect || busy}
-            onClick={() => void capture(true)}>Capture &amp; check</button>}
-          <button className="secondary" disabled={!cameraReady || busy} onClick={() => void capture()}>Take a snapshot</button>
+            {!training && <button disabled={!cameraReady || !canInspect || busy}
+              onClick={() => void capture(true)}>Capture &amp; check</button>}
+            <button className="secondary" disabled={!cameraReady || busy}
+              onClick={() => void capture()}>Take a snapshot</button>
           </div>}
           {!training && cameraReady && !canInspect && (engine === 'qwen' || model?.status === 'ready') &&
             <p className="muted">Finish setting up your check, then capture a photo.</p>}
-          <div className="camera-heading">
-            <h3>{result ? 'Checked photo' : 'Photo to check'}</h3>
-            {result && <span className={`badge ${result.decision.toLowerCase()}`}>{result.decision}</span>}
-          </div>
+          {preview && <h3>Selected photo</h3>}
           {preview
           ? <div className={`detection-preview ${!training && result ? `frame-${result.decision.toLowerCase()}` : ''}`}>
             <img src={preview} alt="Selected image" onLoad={event => {
@@ -380,12 +362,12 @@ export function InspectionDemo({ mode, onResult }: {
               </div>
             ))}
           </div>
-          : <div className="image-placeholder photo-placeholder">Take a snapshot or upload a photo.</div>}
+          : !activeSource && <div className="image-placeholder">Upload a photo or start a camera.</div>}
         </div>
         {message && <p className="muted" role="status">{message}</p>}
       </article>
       <article className="panel check-card">
-        <h2>{training ? 'Save an example' : 'Set up your check'}</h2>
+        <h2>{training ? 'Save an example' : 'Inspection'}</h2>
         {training ? <>
           <label className="demo-field">Part reference
             <input value={partId} onChange={event => setPartId(event.target.value)}
@@ -398,36 +380,14 @@ export function InspectionDemo({ mode, onResult }: {
           </div>
           {availability && <p className="notice" role="status">{availability}</p>}
         </> : <>
-          <fieldset className="check-method" disabled={busy}>
-            <legend>Choose how to check</legend>
-            <div className="check-method-options">
-              <label className={engine === 'yolo' ? 'selected' : undefined}>
-                <input type="radio" name="inspection-method" checked={engine === 'yolo'}
-                  onChange={() => selectEngine('yolo')} />
-                <span><strong>Count parts</strong><small>Check against an expected number</small></span>
-              </label>
-              <label className={engine === 'qwen' ? 'selected' : undefined}>
-                <input type="radio" name="inspection-method" checked={engine === 'qwen'}
-                  onChange={() => selectEngine('qwen')} />
-                <span><strong>Check a written rule</strong><small>Requires the optional vision model</small></span>
-              </label>
-            </div>
-          </fieldset>
+          <label className="demo-field">Check type
+            <select value={engine} disabled={busy}
+              onChange={event => selectEngine(event.target.value === 'qwen' ? 'qwen' : 'yolo')}>
+              <option value="yolo">Count parts</option>
+              <option value="qwen">Check a written rule</option>
+            </select>
+          </label>
           {engine === 'yolo' ? <>
-            <div className="model-status" role="status">
-              {model?.status === 'ready' ? <><strong>Ready to count</strong><small>Model: {model.model}</small></>
-                : modelError || model?.status === 'unavailable' ? 'The counting model isn’t available.'
-                : model?.status === 'missing' ? 'No counting model is ready.' : 'Checking model availability…'}
-              {model?.status !== 'ready' && <p><a href="#models">Open model setup</a></p>}
-              <button type="button" className="secondary" disabled={busy}
-                onClick={() => { setCompleted(null); setModelRefresh(value => value + 1); }}>Refresh model</button>
-            </div>
-            {personDemoAvailable && <div className="demo-preset">
-              <div><strong>Try a quick demo</strong><p>Check for one person before testing your own parts.</p></div>
-              <button type="button" className="secondary" disabled={busy} onClick={usePersonDemo}>
-                Use person demo
-              </button>
-            </div>}
             <label className="demo-field">Part to count
               <select value={target} disabled={busy || model?.status !== 'ready'} onChange={event => {
                 setTarget(event.target.value);
@@ -442,7 +402,14 @@ export function InspectionDemo({ mode, onResult }: {
                 onChange={event => { setExpectedCount(event.target.value); setCompleted(null); }} />
             </label>
             <details className="check-options">
-              <summary>Advanced settings</summary>
+              <summary>Model settings</summary>
+              {modelReady && <p className="muted">Loaded: {model.model}</p>}
+              <div className="demo-actions">
+                <button className="secondary" disabled={busy}
+                  onClick={() => { setCompleted(null); setModelRefresh(value => value + 1); }}>Refresh model</button>
+                {personDemoAvailable && <button className="secondary" disabled={busy}
+                  onClick={usePersonDemo}>Use person demo</button>}
+              </div>
               <label className="demo-field">Minimum confidence (%)
                 <input type="number" min={1} max={100} value={confidence} disabled={busy}
                   onChange={event => { setConfidence(event.target.value); setCompleted(null); }} />
@@ -454,11 +421,14 @@ export function InspectionDemo({ mode, onResult }: {
               placeholder="For example, each package should have a readable label."
               onChange={event => { update({ acceptanceRule: event.target.value }); setCompleted(null); }} />
           </label>}
-          {!result && !inspecting && <p className="check-next-step" role="status">
-            <strong>Next step</strong> {nextStep}
+          {engine === 'yolo' && !modelReady && <p className="notice" role="status">
+            {modelError || model?.status === 'unavailable' ? 'Counting model unavailable. '
+              : model?.status === 'missing' ? 'No counting model loaded. ' : 'Checking model availability…'}
+            {(modelError || model?.status === 'missing' || model?.status === 'unavailable') &&
+              <a href="#models">Train or load a model</a>}
           </p>}
           <button disabled={!image || !canInspect || busy} onClick={() => void inspect(image)}>Check this photo <span aria-hidden="true">→</span></button>
-          <section className="check-result" aria-labelledby="check-result-heading">
+          {(result || inspecting) && <section className="check-result" aria-labelledby="check-result-heading">
             <h3 id="check-result-heading">Check result</h3>
             <div className="result-box" role="status">
               {inspecting ? 'Checking photo…' : result
@@ -472,14 +442,14 @@ export function InspectionDemo({ mode, onResult }: {
                   {engine === 'yolo' && result.detections && <small>
                     Green boxes show parts found. The photo border shows the overall result.
                   </small>}</>
-                : 'Run a check to see whether the photo passes.'}
+                : null}
             </div>
-          </section>
+          </section>}
         </>}
       </article>
     </div>
-    {!training && preview && !!result?.detections?.length && <section className="panel saved-panel">
-      <h2>Parts found</h2>
+    {!training && preview && !!result?.detections?.length && <details className="panel saved-panel">
+      <summary>See individual detections</summary>
       <div className="detection-crops">
         {result.detections.map((box, index) => {
           const width = box.x2 - box.x1;
@@ -495,7 +465,7 @@ export function InspectionDemo({ mode, onResult }: {
           </figure>;
         })}
       </div>
-    </section>}
+    </details>}
     {training && <section className="panel saved-panel">
       <h2>Saved examples</h2>
       {ready && examples.length === 0 && <p className="muted">No saved examples yet.</p>}
