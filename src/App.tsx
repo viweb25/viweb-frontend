@@ -27,7 +27,7 @@ type Activity = InspectionResult & { id: number; time: Date };
 
 function currentPage(): Page {
   const hash = window.location.hash.slice(1);
-  return Object.hasOwn(pages, hash) ? hash as Page : 'inspection';
+  return Object.hasOwn(pages, hash) ? (hash as Page) : 'overview';
 }
 
 export function App() {
@@ -112,8 +112,21 @@ export function App() {
         <div className="page-heading">
           <div><h1>{pages[page].name}</h1><p>{pages[page].description}</p></div>
         </div>
-
         {page === 'overview' && <>
+          <div className="card-grid">
+            <section className="panel">
+              <h2>Try a demo inspection</h2>
+              <p>Check a photo using the existing YOLO model.</p>
+              <a href="#inspection">Try demo inspection</a>
+            </section>
+
+            <section className="panel">
+              <h2>Train your own model</h2>
+              <p>Learn how to prepare labeled photos of your own parts.</p>
+              <a href="#models">Open the training guide</a>
+            </section>
+          </div>
+
           <section className="panel activity">
             <div className="section-heading"><div><h2>Recent inspections</h2><p>Current browser session</p></div></div>
             {activity.length ? <div className="table-scroll">

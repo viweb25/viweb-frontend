@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
 
 import { useWorkspacePreferences } from './context/WorkspacePreferences';
-import { detectObjects, inspectImage, loadDetectionModel, type DetectionModel, type InspectionResult } from './services/api/inspection';
+import {
+  analyzeImage, detectObjects, inspectImage, loadDetectionModel,
+  type DetectionModel, type ImageAnalysis, type InspectionResult,
+} from './services/api/inspection';
 import { exampleImage, loadExamples, saveExample, type Example, type Label } from './services/api/trainingExamples';
 
 async function makeJpeg(source: CanvasImageSource, width: number, height: number) {
@@ -24,7 +27,7 @@ export function InspectionDemo({ mode, onResult }: {
   const { preferences, update } = useWorkspacePreferences();
   const rule = preferences.acceptanceRule;
   const training = mode === 'training';
-  const [engine, setEngine] = useState<'qwen' | 'yolo'>('yolo');
+  const [engine, setEngine] = useState<'analyze' | 'qwen' | 'yolo'>('yolo');
   const [target, setTarget] = useState('');
   const [model, setModel] = useState<DetectionModel | null>(null);
   const [modelError, setModelError] = useState(false);
@@ -32,10 +35,11 @@ export function InspectionDemo({ mode, onResult }: {
   const [confidence, setConfidence] = useState('50');
   const [expectedCount, setExpectedCount] = useState('1');
   const count = Number(expectedCount);
-  const canInspect = engine === 'qwen' ? !!rule.trim()
+  const validConfidence = Number(confidence) >= 1 && Number(confidence) <= 100;
+  const canInspect = engine === 'analyze' ? validConfidence : engine === 'qwen' ? !!rule.trim()
     : model?.status === 'ready' && model.classes.includes(target) &&
       Number.isInteger(count) && count >= 1 && count <= 999 &&
-      Number(confidence) >= 1 && Number(confidence) <= 100;
+      validConfidence;
   const monitor = useRef<HTMLDivElement>(null);
   const video = useRef<HTMLVideoElement>(null);
   const photoInput = useRef<HTMLInputElement>(null);
@@ -49,8 +53,13 @@ export function InspectionDemo({ mode, onResult }: {
   const [image, setImage] = useState<Blob | null>(null);
   const [preview, setPreview] = useState('');
   const [frameRatio, setFrameRatio] = useState(1);
-  const [completed, setCompleted] = useState<{ rule: string; result: InspectionResult } | null>(null);
-  const result = completed?.rule === rule.trim() ? completed.result : null;
+  const [completed, setCompleted] = useState<
+    { rule: string; result: InspectionResult } | { analysis: ImageAnalysis } | null
+  >(null);
+  const result = completed && 'result' in completed && completed.rule === rule.trim()
+    ? completed.result : null;
+  const analysis = completed && 'analysis' in completed ? completed.analysis : null;
+  const detections = analysis?.detections ?? result?.detections;
   const [inspecting, setInspecting] = useState(false);
   const [partId, setPartId] = useState('');
   const [examples, setExamples] = useState<Example[]>([]);
@@ -212,12 +221,15 @@ export function InspectionDemo({ mode, onResult }: {
     setImage(null);
     try {
       const bitmap = await createImageBitmap(file);
+      let jpeg: Blob;
       try {
-        setImage(await makeJpeg(bitmap, bitmap.width, bitmap.height));
-        setMessage('');
+        jpeg = await makeJpeg(bitmap, bitmap.width, bitmap.height);
       } finally {
         bitmap.close();
       }
+      setImage(jpeg);
+      setMessage('');
+      if (!training && engine === 'analyze') await inspect(jpeg);
     } catch {
       setMessage('Could not open that photo. Try a JPEG or PNG.');
     } finally {
@@ -229,14 +241,24 @@ export function InspectionDemo({ mode, onResult }: {
     if (!jpeg || !canInspect) return;
     setBusy(true);
     setInspecting(true);
+    setMessage('');
     setCompleted(null);
     try {
+      if (engine === 'analyze') {
+        const analysis = await analyzeImage(jpeg, Number(confidence) / 100);
+        setCompleted({ analysis });
+        return;
+      }
       const response = engine === 'yolo'
         ? await detectObjects(target, count, Number(confidence) / 100, jpeg)
         : await inspectImage(rule.trim(), jpeg);
       setCompleted({ rule: rule.trim(), result: response });
       onResult(response);
     } catch {
+      if (engine === 'analyze') {
+        setMessage('Image analysis is unavailable.');
+        return;
+      }
       const response = { decision: 'HOLD', reason: 'Inspection service unavailable.', model: null } as const;
       setCompleted({ rule: rule.trim(), result: response });
       onResult(response);
@@ -268,7 +290,7 @@ export function InspectionDemo({ mode, onResult }: {
 
   const modelReady = model?.status === 'ready';
   const personDemoAvailable = engine === 'yolo' && modelReady && model.classes.includes('person');
-  function selectEngine(value: 'yolo' | 'qwen') {
+  function selectEngine(value: typeof engine) {
     setEngine(value);
     setCompleted(null);
   }
@@ -340,7 +362,7 @@ export function InspectionDemo({ mode, onResult }: {
           {activeSource && !cameraReady && <div className="image-placeholder">Waiting for the live feed…</div>}
           {activeSource && <div className="demo-actions">
             {!training && <button disabled={!cameraReady || !canInspect || busy}
-              onClick={() => void capture(true)}>Capture &amp; check</button>}
+              onClick={() => void capture(true)}>{engine === 'analyze' ? 'Capture & analyze' : 'Capture & check'}</button>}
             <button className="secondary" disabled={!cameraReady || busy}
               onClick={() => void capture()}>Take a snapshot</button>
           </div>}
@@ -353,7 +375,7 @@ export function InspectionDemo({ mode, onResult }: {
               const { naturalWidth, naturalHeight } = event.currentTarget;
               setFrameRatio(naturalWidth / naturalHeight);
             }} />
-            {!training && result?.detections?.map((box, index) => (
+            {!training && detections?.map((box, index) => (
               <div className="detection-box" key={index} style={{
                 left: `${box.x1 * 100}%`, top: `${box.y1 * 100}%`,
                 width: `${(box.x2 - box.x1) * 100}%`, height: `${(box.y2 - box.y1) * 100}%`,
@@ -382,11 +404,17 @@ export function InspectionDemo({ mode, onResult }: {
         </> : <>
           <label className="demo-field">Check type
             <select value={engine} disabled={busy}
-              onChange={event => selectEngine(event.target.value === 'qwen' ? 'qwen' : 'yolo')}>
+              onChange={event => selectEngine(event.target.value as typeof engine)}>
               <option value="yolo">Count parts</option>
+              <option value="analyze">Analyze image</option>
               <option value="qwen">Check a written rule</option>
             </select>
           </label>
+          {engine === 'analyze' && <p className="muted">
+            YOLO counts objects. Qwen describes the scene. <a
+              href="https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct" target="_blank"
+              rel="noreferrer">Qwen model card</a>
+          </p>}
           {engine === 'yolo' ? <>
             <label className="demo-field">Part to count
               <select value={target} disabled={busy || model?.status !== 'ready'} onChange={event => {
@@ -416,7 +444,7 @@ export function InspectionDemo({ mode, onResult }: {
               </label>
               <p className="muted">Parts below this confidence level aren’t counted.</p>
             </details>
-          </> : <label className="demo-field">What should a good part look like?
+          </> : engine === 'qwen' && <label className="demo-field">What should a good part look like?
             <textarea value={rule} maxLength={400} disabled={busy} rows={4}
               placeholder="For example, each package should have a readable label."
               onChange={event => { update({ acceptanceRule: event.target.value }); setCompleted(null); }} />
@@ -427,11 +455,11 @@ export function InspectionDemo({ mode, onResult }: {
             {(modelError || model?.status === 'missing' || model?.status === 'unavailable') &&
               <a href="#models">Train or load a model</a>}
           </p>}
-          <button disabled={!image || !canInspect || busy} onClick={() => void inspect(image)}>Check this photo <span aria-hidden="true">→</span></button>
+          <button disabled={!image || !canInspect || busy} onClick={() => void inspect(image)}>{engine === 'analyze' ? 'Analyze this photo' : 'Check this photo'} <span aria-hidden="true">→</span></button>
           {(result || inspecting) && <section className="check-result" aria-labelledby="check-result-heading">
             <h3 id="check-result-heading">Check result</h3>
             <div className="result-box" role="status">
-              {inspecting ? 'Checking photo…' : result
+              {inspecting ? engine === 'analyze' ? 'Analyzing photo…' : 'Checking photo…' : result
                 ? <><strong className={`badge ${result.decision.toLowerCase()}`}>{result.decision}</strong>
                   {engine === 'yolo' && result.decision !== 'HOLD' && result.detections &&
                     <dl className="check-counts">
@@ -445,13 +473,25 @@ export function InspectionDemo({ mode, onResult }: {
                 : null}
             </div>
           </section>}
+          {analysis && <section className="check-result" aria-label="Image analysis" role="status">
+            {analysis.error ? <p>{analysis.error}</p> : <>
+              <h3>Objects YOLO found</h3>
+              {analysis.detection_error ? <p>{analysis.detection_error}</p>
+                : Object.keys(analysis.counts).length ? <ul>
+                  {Object.entries(analysis.counts).map(([label, count]) =>
+                    <li key={label}>{label} × {count}</li>)}
+                </ul> : <p>No objects detected.</p>}
+              <h3>Qwen scene description</h3>
+              <p>{analysis.description.text ?? analysis.description.error}</p>
+            </>}
+          </section>}
         </>}
       </article>
     </div>
-    {!training && preview && !!result?.detections?.length && <details className="panel saved-panel">
+    {!training && preview && !!detections?.length && <details className="panel saved-panel">
       <summary>See individual detections</summary>
       <div className="detection-crops">
-        {result.detections.map((box, index) => {
+        {detections.map((box, index) => {
           const width = box.x2 - box.x1;
           const height = box.y2 - box.y1;
           return <figure key={index}>

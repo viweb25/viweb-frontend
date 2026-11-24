@@ -48,3 +48,22 @@ export interface DetectionModel {
 export function loadDetectionModel(signal: AbortSignal) {
   return get<DetectionModel>('/api/v1/demo/detection-model', signal);
 }
+
+export interface ImageAnalysis {
+  detections: Detection[];
+  counts: Record<string, number>;
+  model: string | null;
+  detection_error: string | null;
+  description: { text: string | null; model: string | null; error: string | null };
+  error: string | null;
+}
+
+export function analyzeImage(image: Blob, confidence: number) {
+  const query = new URLSearchParams({ confidence: String(confidence) });
+  return request<ImageAnalysis>(`/api/v1/demo/analyze?${query}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'image/jpeg' },
+    body: image,
+    signal: AbortSignal.timeout(100_000),
+  });
+}
