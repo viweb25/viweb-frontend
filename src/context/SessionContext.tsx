@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 
 import { loadCurrentUser, signIn, signOut, signUp, type SignedInUser } from '../services/api/auth';
+import { InspectionIllustration, WorkspaceIcon } from '../WorkspaceIcon';
 import { ApiRequestError } from '../services/api/client';
 
 const SessionContext = createContext<{
@@ -96,8 +97,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   return <main className="sign-in">
     <div className="sign-in-shell">
       <aside className="sign-in-brand">
-        <a className="brand" href="/"><span className="brand-tile" aria-hidden="true">V</span> VI WebSync</a>
-        <p>Check parts from a camera or photo.</p>
+        <a className="brand" href="/"><span className="brand-tile"><WorkspaceIcon name="brand" /></span> VI WebSync</a>
+        <div className="sign-in-intro">
+          <h2>Visual inspection for your production line</h2>
+          <p>Check parts from a photo or camera and train a model using your own examples.</p>
+        </div>
+        <InspectionIllustration />
       </aside>
       <section className="sign-in-card" aria-labelledby="sign-in-heading">
         <h1 id="sign-in-heading">{signup ? 'Create your account' : 'Sign in'}</h1>

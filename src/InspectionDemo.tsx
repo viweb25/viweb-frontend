@@ -7,18 +7,7 @@ import {
 } from './services/api/inspection';
 import { exampleImage, loadExamples, saveExample, type Example, type Label } from './services/api/trainingExamples';
 
-async function makeJpeg(source: CanvasImageSource, width: number, height: number) {
-  const scale = Math.min(1, 1920 / Math.max(width, height));
-  const canvas = document.createElement('canvas');
-  canvas.width = Math.max(1, Math.round(width * scale));
-  canvas.height = Math.max(1, Math.round(height * scale));
-  const context = canvas.getContext('2d');
-  if (!context) throw new Error('Image capture is unavailable.');
-  context.drawImage(source, 0, 0, canvas.width, canvas.height);
-  return new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob(image => image ? resolve(image) : reject(new Error('Could not encode image.')), 'image/jpeg', 0.9);
-  });
-}
+import { makeJpeg } from './inspectionImage';
 
 export function InspectionDemo({ mode, onResult }: {
   mode: 'inspect' | 'training' | null;
@@ -410,11 +399,7 @@ export function InspectionDemo({ mode, onResult }: {
               <option value="qwen">Check a written rule</option>
             </select>
           </label>
-          {engine === 'analyze' && <p className="muted">
-            YOLO counts objects. Qwen describes the scene. <a
-              href="https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct" target="_blank"
-              rel="noreferrer">Qwen model card</a>
-          </p>}
+          {engine === 'analyze' && <p className="muted">See what the model finds and get a short description of the photo.</p>}
           {engine === 'yolo' ? <>
             <label className="demo-field">Part to count
               <select value={target} disabled={busy || model?.status !== 'ready'} onChange={event => {
@@ -431,7 +416,7 @@ export function InspectionDemo({ mode, onResult }: {
             </label>
             <details className="check-options">
               <summary>Model settings</summary>
-              {modelReady && <p className="muted">Loaded: {model.model}</p>}
+              {modelReady && <p className="muted">Counting model ready.</p>}
               <div className="demo-actions">
                 <button className="secondary" disabled={busy}
                   onClick={() => { setCompleted(null); setModelRefresh(value => value + 1); }}>Refresh model</button>
@@ -475,13 +460,13 @@ export function InspectionDemo({ mode, onResult }: {
           </section>}
           {analysis && <section className="check-result" aria-label="Image analysis" role="status">
             {analysis.error ? <p>{analysis.error}</p> : <>
-              <h3>Objects YOLO found</h3>
-              {analysis.detection_error ? <p>{analysis.detection_error}</p>
+              <h3>Objects detected</h3>
+              {analysis.detection_error ? <p>Object detection could not run on this photo.</p>
                 : Object.keys(analysis.counts).length ? <ul>
                   {Object.entries(analysis.counts).map(([label, count]) =>
                     <li key={label}>{label} × {count}</li>)}
                 </ul> : <p>No objects detected.</p>}
-              <h3>Qwen scene description</h3>
+              <h3>Scene description</h3>
               <p>{analysis.description.text ?? analysis.description.error}</p>
             </>}
           </section>}
