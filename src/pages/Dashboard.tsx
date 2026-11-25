@@ -5,20 +5,10 @@ import { useWorkspace } from '../context/WorkspaceContext';
 import {
   deleteTrainingDataset, listTrainingDatasets, saveTrainingDataset, type ProjectSummary,
 } from '../services/api/trainingDatasets';
-import { Icon, type IconName } from '../ui/Icon';
+import { Icon } from '../ui/Icon';
 import {
   ErrorBox, Modal, classColor, errorText, projectHref, timeAgo, useToast, type Step,
 } from '../ui/common';
-
-export const TEMPLATES: { name: string; icon: IconName; classes: string[]; hint: string }[] = [
-  { name: 'Custom', icon: 'plus', classes: [], hint: 'Start from scratch' },
-  { name: 'Safety gear', icon: 'user', classes: ['Helmet', 'Vest', 'Person', 'Gloves'], hint: 'PPE on site' },
-  { name: 'Manufacturing', icon: 'cpu', classes: ['Scratch', 'Dent', 'Screw'], hint: 'Defects and parts' },
-  { name: 'Bottling', icon: 'target', classes: ['Bottle', 'Cap', 'Label'], hint: 'Caps and labels' },
-  { name: 'Retail', icon: 'grid', classes: ['Product', 'Shelf label', 'Empty slot'], hint: 'Shelf checks' },
-  { name: 'Logistics', icon: 'box', classes: ['Box', 'Pallet', 'Barcode'], hint: 'Packages' },
-  { name: 'Agriculture', icon: 'sparkle', classes: ['Healthy leaf', 'Pest damage'], hint: 'Crop health' },
-];
 
 type Status = { label: string; step: Step; tone: 'plain' | 'live' | 'dark' | 'soft' };
 
@@ -91,7 +81,7 @@ export function Dashboard() {
             <div key={label}><Icon name={icon} />{label}</div>)}
         </div>
         {canEdit && <div><button type="button" className="btn dark" onClick={() => setCreating(true)}>
-          <Icon name="plus" /> New project
+          <Icon name="plus" /> Train a model
         </button></div>}
       </div>
       <div className="stats">
@@ -120,14 +110,14 @@ export function Dashboard() {
       {!projects && !error && <div className="projects">{[0, 1, 2].map(index => <div key={index} className="skeleton" style={{ height: 220 }} />)}</div>}
       {projects && projects.length === 0 && <div className="empty">
         <span className="bubble"><Icon name="layers" /></span>
-        <h2>Create your first project</h2>
-        <p className="muted" style={{ maxWidth: '46ch' }}>A project holds your photos, labels, and trained models for one inspection task, such as “Helmet detection” or “Bottle caps”.</p>
-        {canEdit ? <button type="button" className="btn" onClick={() => setCreating(true)}><Icon name="plus" /> New project</button>
+        <h2>Train your first model</h2>
+        <p className="muted" style={{ maxWidth: '46ch' }}>Start with your own photos and label what the model should learn to find.</p>
+        {canEdit ? <button type="button" className="btn" onClick={() => setCreating(true)}><Icon name="plus" /> Train a model</button>
           : <p className="muted">You have view-only access in this workspace.</p>}
       </div>}
       {projects && projects.length > 0 && <div className="projects">
         {canEdit && filter === 'all' && !query && <button type="button" className="new-project" onClick={() => setCreating(true)}>
-          <span className="bubble"><Icon name="plus" /></span>New project
+          <span className="bubble"><Icon name="plus" /></span>Train a model
         </button>}
         {visible.map(project => <ProjectCard key={project.id} orgId={orgId} project={project}
           onDelete={canEdit ? () => setDeleting(project) : undefined} />)}
@@ -179,162 +169,43 @@ function ProjectCard({ orgId, project, onDelete }: { orgId: string; project: Pro
   </div>;
 }
 
-const CHECK_TEMPLATES: { name: string; object: string; good: string; defects: { name: string; hint: string }[] }[] = [
-  { name: 'Bottle caps', object: 'bottle', good: 'Bottle WITH a cap', defects: [{ name: 'No cap', hint: 'Bottle WITHOUT a cap' }] },
-  { name: 'Safety helmets', object: 'worker', good: 'Person wearing a helmet', defects: [{ name: 'No helmet', hint: 'Person without a helmet' }] },
-  { name: 'Part surface', object: 'part', good: 'Clean part, no damage', defects: [{ name: 'Scratch', hint: 'Visible scratch' }, { name: 'Dent', hint: 'Dent or bend' }] },
-  { name: 'Labels', object: 'product', good: 'Label present and straight', defects: [{ name: 'Missing label', hint: 'No label' }, { name: 'Crooked label', hint: 'Label tilted' }] },
-];
-
-type Mode = 'check' | 'count';
-type DefectRow = { name: string; hint: string };
-
 function CreateProject({ orgId, onClose }: { orgId: string; onClose: () => void }) {
-  const [mode, setMode] = useState<Mode>('check');
   const [name, setName] = useState('');
-  const [object, setObject] = useState('');
-  const [goodHint, setGoodHint] = useState('');
-  const [defects, setDefects] = useState<DefectRow[]>([{ name: '', hint: '' }]);
-  const [classes, setClasses] = useState<string[]>([]);
-  const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const toast = useToast();
 
-  const objectName = object.trim() || 'item';
-  const goodName = `Good ${objectName}`.slice(0, 80);
-  const usedDefects = defects.filter(row => row.name.trim());
-
-  function useTemplate(template: typeof CHECK_TEMPLATES[number]) {
-    setObject(template.object);
-    setGoodHint(template.good);
-    setDefects(template.defects.map(row => ({ ...row })));
-    if (!name.trim()) setName(`${template.name} check`);
-  }
-
-  function addClass() {
-    const label = draft.trim();
-    if (!label) return;
-    if (classes.some(item => item.toLowerCase() === label.toLowerCase())) return setError(`“${label}” is already in the list.`);
-    setError('');
-    setClasses(current => [...current, label.slice(0, 80)]);
-    setDraft('');
-  }
-
-  async function create() {
+  async function create(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
     if (!name.trim() || busy) return;
-    let finalClasses: string[];
-    let info: Record<string, { kind: 'good' | 'defect' | 'object'; hint: string }>;
-    if (mode === 'check') {
-      if (!object.trim()) return setError('Say what you are checking, for example “bottle”.');
-      if (!usedDefects.length) return setError('Add at least one defect, for example “No cap”.');
-      finalClasses = [goodName, ...usedDefects.map(row => row.name.trim().slice(0, 80))];
-      if (new Set(finalClasses.map(item => item.toLowerCase())).size !== finalClasses.length) return setError('Each name must be different.');
-      info = {
-        [goodName]: { kind: 'good', hint: goodHint.trim().slice(0, 120) },
-        ...Object.fromEntries(usedDefects.map(row => [row.name.trim().slice(0, 80), { kind: 'defect' as const, hint: row.hint.trim().slice(0, 120) }])),
-      };
-    } else {
-      const pending = draft.trim() && !classes.some(item => item.toLowerCase() === draft.trim().toLowerCase()) ? [draft.trim()] : [];
-      finalClasses = [...classes, ...pending];
-      if (!finalClasses.length) return setError('Add at least one thing to find.');
-      info = Object.fromEntries(finalClasses.map(label => [label, { kind: 'object' as const, hint: '' }]));
-    }
     setBusy(true);
     setError('');
     try {
       const id = crypto.randomUUID();
       await saveTrainingDataset(orgId, {
-        id, revision: 0, part_name: name.trim(), classes: finalClasses, class_info: info, inspection_note: '', photos: [],
+        id, revision: 0, part_name: name.trim(), classes: [], class_info: {}, inspection_note: '', photos: [],
       });
-      toast('Project created');
       window.location.hash = projectHref(orgId, id, 'upload');
     } catch (cause) {
-      setError(errorText(cause, 'Could not create the project.'));
+      setError(errorText(cause, 'Could not start the training project.'));
       setBusy(false);
     }
   }
 
-  return <Modal title="New project" wide description="Answer three quick questions. You can change everything later." onClose={onClose}
+  return <Modal title="Train a model" onClose={onClose}
+    description="Name your project, upload your photos, then mark what the model should learn to find."
     footer={<>
       <button type="button" className="btn ghost" onClick={onClose} disabled={busy}>Cancel</button>
-      <button type="button" className="btn" disabled={busy || !name.trim()} onClick={() => void create()}>
-        {busy ? 'Creating…' : <>Create project <Icon name="arrow" /></>}
+      <button type="submit" form="start-training-project" className="btn" disabled={busy || !name.trim()}>
+        {busy ? 'Opening project…' : <>Continue to upload <Icon name="arrow" /></>}
       </button>
     </>}>
-    <div className="field" role="group" aria-labelledby="mode-label">
-      <span id="mode-label">1. What do you want the model to do?</span>
-      <div className="mode-cards">
-        <button type="button" className="mode-card" aria-pressed={mode === 'check'} onClick={() => setMode('check')}>
-          <span className="ribbon">Recommended</span>
-          <strong><Icon name="check" /> Tell good from defective</strong>
-          <small>Each result is PASS or FAIL. Example: bottle with a cap = PASS, without a cap = FAIL.</small>
-        </button>
-        <button type="button" className="mode-card" aria-pressed={mode === 'count'} onClick={() => setMode('count')}>
-          <strong><Icon name="grid" /> Find and count things</strong>
-          <small>Each result is a list of what it found. Example: 3 helmets, 2 vests.</small>
-        </button>
-      </div>
-    </div>
-
-    <label className="field">2. Project name
-      <input maxLength={80} value={name} placeholder={mode === 'check' ? 'e.g. Bottle cap check' : 'e.g. Helmet counting'}
-        onChange={event => setName(event.target.value)} />
-    </label>
-
-    {mode === 'check' ? <div className="field">
-      <span>3. Describe good and defective</span>
-      <div className="row" style={{ gap: '.4rem' }}><span className="small muted">Quick start:</span>
-        {CHECK_TEMPLATES.map(template => <button key={template.name} type="button" className="btn ghost small"
-          onClick={() => useTemplate(template)}>{template.name}</button>)}</div>
-      <div className="fields" style={{ gridTemplateColumns: '1fr 1.4fr' }}>
-        <label className="field">What are you checking?<input value={object} maxLength={60} placeholder="e.g. bottle"
-          onChange={event => setObject(event.target.value)} /></label>
-        <label className="field">What does a GOOD one look like?<input value={goodHint} maxLength={120} placeholder="e.g. Bottle WITH a cap"
-          onChange={event => setGoodHint(event.target.value)} /></label>
-      </div>
-      <div className="class-row" style={{ gridTemplateColumns: 'auto 1fr auto' }}>
-        <span className="kind good"><Icon name="check" />Good</span><b>{goodName}</b><span className="small muted">→ PASS</span>
-      </div>
-      <span style={{ marginTop: '.4rem' }}>What can be WRONG? Add one line per defect.</span>
-      {defects.map((row, position) => <div key={position} className="class-row" style={{ gridTemplateColumns: 'auto 1fr 1.3fr auto' }}>
-        <span className="kind defect"><Icon name="alert" />Defect</span>
-        <input className="input" value={row.name} maxLength={80} placeholder="Name, e.g. No cap" aria-label="Defect name"
-          onChange={event => setDefects(current => current.map((item, index) => index === position ? { ...item, name: event.target.value } : item))} />
-        <input className="input" value={row.hint} maxLength={120} placeholder="Looks like, e.g. bottle WITHOUT a cap" aria-label="Defect description"
-          onChange={event => setDefects(current => current.map((item, index) => index === position ? { ...item, hint: event.target.value } : item))} />
-        <button type="button" className="icon-btn" aria-label="Remove defect" disabled={defects.length === 1}
-          onClick={() => setDefects(current => current.filter((_, index) => index !== position))}><Icon name="close" /></button>
-      </div>)}
-      <div><button type="button" className="btn ghost small" onClick={() => setDefects(current => [...current, { name: '', hint: '' }])}>
-        <Icon name="plus" /> Add another defect</button></div>
-      <div className="example-box small">
-        <b>When labeling</b> you will draw <b>one box around each whole {objectName}</b> and pick
-        “{goodName}”{usedDefects.length ? <> or {usedDefects.map(row => `“${row.name.trim()}”`).join(' / ')}</> : null}.
-        Upload photos of <b>both good and defective</b> {objectName}s, about the same number of each.
-      </div>
-    </div> : <div className="field">
-      <span>3. What should it find? <span className="hint">· one class per kind of thing</span></span>
-      <div className="row" style={{ gap: '.4rem' }}><span className="small muted">Quick start:</span>
-        {TEMPLATES.filter(item => item.classes.length).map(item => <button key={item.name} type="button" className="btn ghost small"
-          onClick={() => { setClasses([...item.classes]); if (!name.trim()) setName(item.name); }}>{item.name}</button>)}</div>
-      <div className="class-editor">
-        {classes.map((label, index) => <div className="class-row" key={label}>
-          <span className="swatch" style={{ background: classColor(index) }} />
-          <span style={{ fontWeight: 500 }}>{label}</span>
-          {index < 9 ? <kbd>{index + 1}</kbd> : <span />}
-          <button type="button" className="icon-btn" aria-label={`Remove ${label}`}
-            onClick={() => setClasses(current => current.filter(item => item !== label))}><Icon name="close" /></button>
-        </div>)}
-        <div className="add-row">
-          <input className="input" value={draft} maxLength={80} placeholder={classes.length ? 'Add another' : 'e.g. Helmet'}
-            onChange={event => setDraft(event.target.value)}
-            onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); addClass(); } }} />
-          <button type="button" className="btn ghost" onClick={addClass} disabled={!draft.trim()}><Icon name="plus" /> Add</button>
-        </div>
-      </div>
-    </div>}
-    {error && <ErrorBox message={error} />}
+    <form id="start-training-project" className="stack" onSubmit={create}>
+      <label className="field">Project name
+        <input maxLength={80} value={name} required disabled={busy}
+          onChange={event => setName(event.target.value)} />
+      </label>
+      {error && <ErrorBox message={error} />}
+    </form>
   </Modal>;
 }
 

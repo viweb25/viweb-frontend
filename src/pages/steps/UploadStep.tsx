@@ -35,7 +35,7 @@ export function UploadStep({ project, orgId, datasetId }: { project: Project; or
       <div>
         <span className="eyebrow">Step 1 of 5</span>
         <h1 style={{ marginTop: '.3rem' }}>Upload your photos</h1>
-        <p>Add photos that look like what your camera will see. Include good and bad examples.</p>
+        <p>Add photos that look like what your camera will see. In the next step, you’ll name what the model should find and mark it in your photos.</p>
       </div>
       {photos.length > 0 && <a className="btn" href={projectHref(orgId, datasetId, 'label')}>
         Next: Label {photos.length} {photos.length === 1 ? 'photo' : 'photos'} <Icon name="arrow" />
@@ -80,7 +80,7 @@ export function UploadStep({ project, orgId, datasetId }: { project: Project; or
         <li className="ok"><span className="mark"><Icon name="check" /></span><span><b>A few empty photos</b> (nothing to check in view). 2–5 photos.</span></li>
         <li className="ok"><span className="mark"><Icon name="check" /></span><span>Upload them <b>all together, mixed</b>. You don't sort them here; you say which is which in the next step.</span></li>
       </ul> : <ul className="checklist">
-        <li className="ok"><span className="mark"><Icon name="check" /></span><span>Photos showing each thing to find: {project.labels.join(', ') || 'your classes'}. About 10–20 photos per class.</span></li>
+        <li className="ok"><span className="mark"><Icon name="check" /></span><span>Photos showing {project.labels.length ? project.labels.join(', ') : 'what you want the model to find'}. Aim for 10–20 photos for each kind of thing.</span></li>
         <li className="ok"><span className="mark"><Icon name="check" /></span><span><b>A few empty photos</b> with nothing to find, so the model learns what to ignore.</span></li>
       </ul>}
       <div className="tips">

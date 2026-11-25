@@ -264,8 +264,8 @@ export function LabelStep({ project, orgId, datasetId, models }: {
 
           {labels.length === 0 ? <>
             <h2>First, tell us what to look for</h2>
-            <p>Add the kinds of things the model should learn, for example <b>Good bottle</b> and <b>No cap</b>.</p>
-            <div className="row"><button type="button" className="btn" onClick={() => setEditingClasses(true)}><Icon name="plus" /> Set up classes</button></div>
+            <p>Add a label for each kind of thing you want the model to find. Then draw a box around each one in your photos.</p>
+            <div className="row"><button type="button" className="btn" onClick={() => setEditingClasses(true)}><Icon name="plus" /> Add labels</button></div>
           </> : stage === 'ask' ? <>
             <h2>What do you see in this photo?</h2>
             <p>Look at the photo below and click what matches. If there are several, start with one; you can add the others next.</p>
@@ -431,9 +431,11 @@ function HowItWorks({ project }: { project: Project }) {
 type Row = { original?: string; name: string; kind: ClassKind; hint: string };
 
 function ClassesModal({ project, onClose }: { project: Project; onClose: () => void }) {
-  const [rows, setRows] = useState<Row[]>(() => project.labels.map(label => ({
-    original: label, name: label, kind: project.kindOf(label), hint: project.classInfo[label]?.hint ?? '',
-  })));
+  const [rows, setRows] = useState<Row[]>(() => project.labels.length
+    ? project.labels.map(label => ({
+      original: label, name: label, kind: project.kindOf(label), hint: project.classInfo[label]?.hint ?? '',
+    }))
+    : [{ name: '', kind: 'object', hint: '' }]);
   const [error, setError] = useState('');
 
   function update(position: number, change: Partial<Row>) {
@@ -463,21 +465,21 @@ function ClassesModal({ project, onClose }: { project: Project; onClose: () => v
       <button type="button" className="btn" onClick={save}><Icon name="check" /> Save classes</button>
     </>}>
     <div className="example-box small">
-      <b>Example for a bottle check:</b> “Good bottle” (Good, <i>bottle WITH a cap</i>) and “No cap” (Defect, <i>bottle WITHOUT a cap</i>).
-      Draw one box around each whole bottle and pick which one it is.
+      Choose <b>Object</b> for things you want to find. For a pass/fail check, use <b>Good</b> for acceptable items
+      and <b>Defect</b> for problems you want the model to flag.
     </div>
     <div className="class-table">
       <div className="class-table-head"><span>Name</span><span>Type</span><span>How to recognise it (optional)</span><span /></div>
       {rows.map((row, position) => {
         const used = row.original ? project.labelCounts[row.original] ?? 0 : 0;
         return <div className="class-table-row" key={position}>
-          <input className="input" aria-label="Class name" value={row.name} maxLength={80} placeholder="e.g. Good bottle"
+          <input className="input" aria-label="Class name" value={row.name} maxLength={80} placeholder="Label name"
             onChange={event => update(position, { name: event.target.value })} />
           <div className="seg kind-seg" role="group" aria-label="Class type">
             {(['good', 'defect', 'object'] as const).map(kind => <button key={kind} type="button" aria-pressed={row.kind === kind}
               onClick={() => update(position, { kind })}>{KIND_LABEL[kind]}</button>)}
           </div>
-          <input className="input" aria-label="Hint" value={row.hint} maxLength={120} placeholder="e.g. Bottle WITH a cap"
+          <input className="input" aria-label="Hint" value={row.hint} maxLength={120} placeholder="What to look for"
             onChange={event => update(position, { hint: event.target.value })} />
           <button type="button" className="icon-btn" aria-label={`Remove ${row.name || 'class'}`}
             title={used ? `Used in ${used} photos: removing it deletes those boxes` : 'Remove'}
