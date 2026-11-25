@@ -29,59 +29,40 @@ This deployment targets a static frontend with a server-side reverse proxy. A
 static-only host must support an equivalent server-side rewrite that can keep the
 gateway key private. Use the backend's exact proxy policy for allowed routes.
 
-## Sign up and connect a camera
+## Using Vision Studio
 
-1. Open the HTTPS dashboard and choose **Create an account**. Enter your workspace
-   name, email, and password. After account creation, **Overview** opens automatically. Select **Start a part check**.
-2. For a camera exposed as a webcam or an HDMI capture device, connect it to the
-   operator PC, select it under **Camera**, and click **Start camera**. Allow
-   browser access. If device names are hidden before permission is granted, start
-   the default camera, stop it, then pick a device from the refreshed list.
-3. For a GigE, RTSP, or USB3 Vision camera that the browser cannot list, open the
-   manufacturer's viewer on the operator PC. Start acquisition and set focus
-   and exposure in the viewer. In VI WebSync, choose **Share camera window**
-   and select the corresponding window or tab. Viewer overlays can appear in
-   the captured frame. You can also use **Upload image** with a saved camera JPEG.
-4. Select **Count parts** and choose the part and expected
-   count, or select **Check a written rule** and enter a written acceptance rule.
-   Use **Capture & check** to inspect a live frame in one click. For a previously
-   captured or uploaded frame, use **Check this photo**.
-5. Review the frozen detection frame, green boxes, part crops, and the decision.
-   Use **Full screen** to expand the monitor. The live preview remains separate
-   from the captured frame on which the decision is based.
+1. Open the dashboard and choose **Sign up**. Enter a workspace name, email and a
+   password of at least 15 characters. You land on **Projects**.
+2. Select **New project**. Name it, optionally pick a template (Safety gear,
+   Manufacturing, Bottling, ...) and list the classes to find. Each class gets a
+   color and a number key for labeling.
+3. Every project walks through five steps shown in the top bar:
+   - **Upload**: drop photos (up to 200). Duplicates are skipped and blurry photos flagged.
+   - **Label**: choose a class (keys 1-9), drag a box around each object, press Enter
+     for the next photo, or E for "Nothing here". Changes save automatically.
+     After a first model exists, **Auto-label** suggests boxes.
+   - **Train**: pick Fast, Balanced (recommended) or Most accurate and press
+     **Start training**. **Advanced settings** exposes dataset split, model size,
+     hyperparameters, loss weights, augmentation, thresholds and checkpoints.
+     The progress screen shows percent done, plain-language stages and a
+     Low / OK / Good / Great quality bar. Training continues if the page is closed.
+   - **Test**: upload a photo or use a live camera. Choose **Find and count** or
+     **Pass / fail check** against a good training photo, and adjust confidence.
+   - **Use**: download best.pt / last.pt, copy a Python snippet, or open **Inspect**.
+4. **Inspect** (top menu) checks parts with any trained model from a photo or camera.
+   **Workspace** lists team members and lets you switch workspaces or sign out.
 
-Camera access requires HTTPS or localhost. Direct hardware triggering and
-vendor SDK acquisition require the camera model and robot or PLC interface.
+Camera access requires HTTPS or localhost.
 
-The **Model setup** dashboard page walks through private JTheta dataset
-preparation, local YOLO training, model review, and checkpoint activation.
-**Example photos** collects frame-level labels. Create object-level bounding
-boxes in JTheta for detector training. The inspection screen reads supported
-classes from the loaded model and lets the operator adjust the confidence threshold.
+## Code map for developers
 
-
-## Dashboard menu for developers
-
-The sidebar groups operator tasks under **Daily work** and configuration under
-**Workspace setup**. Existing hash URLs remain available.
-
-| Menu | What the customer finds | Where to change it |
-| --- | --- | --- |
-| Overview | Start a check, see counting model readiness, follow a sample check, and review results from this browser session. | `src/App.tsx`, route `#overview` |
-| Check parts | Live camera or photo upload, part and count selection, check result, and crops of detected parts. | `src/InspectionDemo.tsx` in inspection mode, route `#inspection` |
-| Example photos | Save and review photos marked pass or fail as reference. | `src/InspectionDemo.tsx` in example mode, route `#training` |
-| Model setup | Directions to label a dataset, train a detector, and load the checkpoint. | `src/ModelWorkflow.tsx`, route `#models` |
-| Inspection types | Browse the API's inspection templates and see their availability. | `src/App.tsx` and `src/services/api/catalogue.ts`, route `#catalogue` |
-| Settings | See the signed-in account, sign out, and change browser workspace preferences. | `src/App.tsx` and `src/context/WorkspacePreferences.tsx`, route `#preferences` |
-
-Navigation and the session landing destination live in `src/App.tsx` and
-`src/context/SessionContext.tsx`. The shared colors and responsive layout live
-in `src/style.css`.
-
-
-For a first camera test with the starter detector, choose **Count parts** and
-click **Use person demo**. This sets the part to person and the expected count to
-one. Put one person in view and click **Capture & check**. To show a count
-mismatch with the same photo, set the expected count to two and click
-**Check this photo**. The results show both the expected and found counts.
-The preset appears only when the loaded model supports the person class.
+| Area | Where to change it |
+| --- | --- |
+| Sign in / sign up | `src/auth/AuthScreen.tsx`, session in `src/context/SessionContext.tsx` |
+| Top bar, routing, account menu | `src/App.tsx`, routes in `src/ui/common.tsx` (`#/`, `#/inspect`, `#/team`, `#/projects/<org>/<project>/<step>`) |
+| Projects dashboard | `src/pages/Dashboard.tsx` |
+| Project state, autosave, stepper | `src/pages/ProjectStudio.tsx` |
+| Steps | `src/pages/steps/{Upload,Label,Train,Test,Use}Step.tsx` |
+| Model testing and camera | `src/pages/ModelTester.tsx`, `src/pages/Inspect.tsx` |
+| Workspace and team | `src/pages/Team.tsx`, current workspace in `src/context/WorkspaceContext.tsx` |
+| Design system (light orange, white, black text) | `src/theme.css`, icons in `src/ui/Icon.tsx` |

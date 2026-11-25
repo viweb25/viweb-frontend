@@ -35,3 +35,9 @@ export async function signUp(email: string, password: string, organisation: stri
   });
   if (!response.ok) throw await readApiError(response);
 }
+
+export type WorkspaceMember = { id: string; name: string; role: string };
+
+export function listWorkspaceMembers(orgId: string, signal?: AbortSignal) {
+  return get<WorkspaceMember[]>(`/api/v1/organisations/${orgId}/members`, signal);
+}
