@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
+import { analyzeImage } from '../services/api/inspection';
 import { makeJpeg } from '../inspectionImage';
 import { previewTrainedModel, type ModelCheck, type TrainingJob } from '../services/api/trainingDatasets';
 import { Icon } from '../ui/Icon';
@@ -40,50 +41,94 @@ export function ModelTester({ orgId, datasetId, model, labels, kindOf }: {
   labels: string[];
   kindOf?: (label: string) => 'good' | 'defect' | 'object';
 }) {
+  return <ImageTester labels={labels} kindOf={kindOf} views={model.reference_views}
+    check={(image, confidence, reference, compare) =>
+      previewTrainedModel(orgId, datasetId, model.id, image, confidence, reference, compare)} />;
+}
+
+export function DemoTester() {
+  return <ImageTester demo labels={[]} check={async (image, confidence) => {
+    const result = await analyzeImage(image, confidence, false);
+    const error = result.error ?? result.detection_error;
+    if (error) throw new Error(error);
+    return { decision: null, detections: result.detections, expected: {}, found: result.counts };
+  }} />;
+}
+
+function ImageTester({ labels, kindOf, views = [], check, demo = false }: {
+  labels: string[];
+  kindOf?: (label: string) => 'good' | 'defect' | 'object';
+  views?: TrainingJob['reference_views'];
+  check: (image: Blob, confidence: number, reference: string, compare: boolean) => Promise<ModelCheck>;
+  demo?: boolean;
+}) {
   const passFail = !!kindOf && labels.some(label => kindOf(label) !== 'object');
   const [source, setSource] = useState<Source>('upload');
   const [photo, setPhoto] = useState<Blob | null>(null);
   const url = useObjectUrl(photo);
   const [confidence, setConfidence] = useState(50);
   const [compare, setCompare] = useState(false);
-  const views = model.reference_views ?? [];
+  const [showAll, setShowAll] = useState(false);
   const [reference, setReference] = useState(views.length === 1 ? views[0].id : '');
-  const [result, setResult] = useState<ModelCheck | null>(null);
+  const [rawResult, setResult] = useState<ModelCheck | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const input = useRef<HTMLInputElement>(null);
   const needsReference = compare && views.length > 1 && !reference;
 
-  async function choose(file: File | Blob) {
+  async function choose(file?: Blob) {
+    if (busy) return;
+    setBusy(true);
     setResult(null);
     setError('');
     try {
+      if (!file) {
+        const response = await fetch(`${import.meta.env.BASE_URL}person-demo.jpg`);
+        if (!response.ok) throw new Error('Could not load the sample photo.');
+        file = await response.blob();
+      }
       const bitmap = await createImageBitmap(file);
+      let jpeg: Blob;
       try {
-        const jpeg = await makeJpeg(bitmap, bitmap.width, bitmap.height);
-        setPhoto(jpeg);
-        await run(jpeg);
+        jpeg = await makeJpeg(bitmap, bitmap.width, bitmap.height);
       } finally {
         bitmap.close();
       }
+      setPhoto(jpeg);
+      if (!needsReference) await checkPhoto(jpeg);
     } catch (cause) {
       setError(cause instanceof DOMException ? 'Could not open this image. Try a JPEG or PNG.' : errorText(cause, 'Could not open this image.'));
-    }
-  }
-
-  async function run(image = photo) {
-    if (!image || needsReference) return;
-    setBusy(true);
-    setError('');
-    try {
-      setResult(await previewTrainedModel(orgId, datasetId, model.id, image, confidence / 100, reference, compare));
-    } catch (cause) {
-      setResult(null);
-      setError(errorText(cause, 'The model could not check this photo.'));
     } finally {
       setBusy(false);
     }
   }
+
+  async function checkPhoto(image: Blob) {
+    try {
+      setResult(await check(image, confidence / 100, reference, compare));
+    } catch (cause) {
+      setResult(null);
+      setError(errorText(cause, 'The model could not check this photo.'));
+    }
+  }
+
+  async function run() {
+    if (!photo || needsReference || busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      await checkPhoto(photo);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const result = demo && !showAll && rawResult ? {
+    ...rawResult,
+    detections: rawResult.detections.filter(box => box.label === 'person'),
+    found: { person: rawResult.found.person ?? 0 },
+  } : rawResult;
+  const colorLabels = demo ? Object.keys(rawResult?.found ?? {}).sort() : labels;
 
   const allLabels = result ? [...new Set([...Object.keys(result.expected), ...Object.keys(result.found)])] : [];
   const total = result ? Object.values(result.found).reduce((sum, count) => sum + count, 0) : 0;
@@ -96,11 +141,14 @@ export function ModelTester({ orgId, datasetId, model, labels, kindOf }: {
         <button type="button" aria-pressed={source === 'upload'} onClick={() => setSource('upload')}><Icon name="upload" /> Upload</button>
         <button type="button" aria-pressed={source === 'camera'} onClick={() => setSource('camera')}><Icon name="camera" /> Camera</button>
       </div>
-      <div className="seg" role="group" aria-label="Check type">
+      {demo ? <div className="seg" role="group" aria-label="What to find">
+        <button type="button" aria-pressed={!showAll} onClick={() => setShowAll(false)}>People</button>
+        <button type="button" aria-pressed={showAll} onClick={() => setShowAll(true)}>All objects</button>
+      </div> : <div className="seg" role="group" aria-label="Check type">
         <button type="button" aria-pressed={!compare} onClick={() => { setCompare(false); setResult(null); }}>{passFail ? 'Good or defect' : 'Find and count'}</button>
         <button type="button" aria-pressed={compare} disabled={!views.length} onClick={() => { setCompare(true); setResult(null); }}
           title={views.length ? undefined : 'Needs a training photo with boxes'}>Compare to a good photo</button>
-      </div>
+      </div>}
     </div>
 
     {compare && <div className="notice"><Icon name="info" />
@@ -116,10 +164,10 @@ export function ModelTester({ orgId, datasetId, model, labels, kindOf }: {
       </div>
     </div>}
 
-    <div className="test-layout" style={{ gridTemplateColumns: 'minmax(0, 1fr) 320px' }}>
+    <div className="test-layout image-test-layout">
       <div className="stack" style={{ gap: '.75rem' }}>
         {source === 'camera'
-          ? <CameraCapture busy={busy} onCapture={blob => void choose(blob)} />
+          ? <CameraCapture busy={busy} onCapture={blob => void choose(blob)} demo={demo} />
           : <div className="stage" onDragOver={event => event.preventDefault()}
             onDrop={event => {
               event.preventDefault();
@@ -130,12 +178,12 @@ export function ModelTester({ orgId, datasetId, model, labels, kindOf }: {
               <img src={url} alt="Photo being checked" />
               {result?.detections.map((box, index) => <div key={index} className="dbox" style={{
                 left: `${box.x1 * 100}%`, top: `${box.y1 * 100}%`, width: `${(box.x2 - box.x1) * 100}%`, height: `${(box.y2 - box.y1) * 100}%`,
-                borderColor: colorFor(labels, box.label),
-              }}><span style={{ background: colorFor(labels, box.label) }}>{box.label} {Math.round(box.confidence * 100)}%</span></div>)}
+                borderColor: colorFor(colorLabels, box.label),
+              }}><span style={{ background: colorFor(colorLabels, box.label) }}>{box.label} {Math.round(box.confidence * 100)}%</span></div>)}
             </div> : <div className="stage-empty">
               <Icon name="image" />
               <strong>Drop a photo here</strong>
-              <span className="small">Use a photo the model has not seen before.</span>
+              <span className="small">{demo ? 'Use the sample or upload your own photo.' : 'Use a photo the model has not seen before.'}</span>
               <button type="button" className="btn" onClick={() => input.current?.click()}><Icon name="upload" /> Choose photo</button>
             </div>}
             {busy && <div className="loading" style={{ position: 'absolute', inset: 0, background: 'rgb(17 17 17 / 45%)', color: '#fff' }}>
@@ -145,16 +193,17 @@ export function ModelTester({ orgId, datasetId, model, labels, kindOf }: {
           <img src={url} alt="Captured frame" />
           {result?.detections.map((box, index) => <div key={index} className="dbox" style={{
             left: `${box.x1 * 100}%`, top: `${box.y1 * 100}%`, width: `${(box.x2 - box.x1) * 100}%`, height: `${(box.y2 - box.y1) * 100}%`,
-            borderColor: colorFor(labels, box.label),
-          }}><span style={{ background: colorFor(labels, box.label) }}>{box.label} {Math.round(box.confidence * 100)}%</span></div>)}
+            borderColor: colorFor(colorLabels, box.label),
+          }}><span style={{ background: colorFor(colorLabels, box.label) }}>{box.label} {Math.round(box.confidence * 100)}%</span></div>)}
         </div></div>}
         <input ref={input} type="file" accept="image/*" hidden onChange={event => {
           const file = event.target.files?.[0];
           if (file) void choose(file);
           event.target.value = '';
         }} />
-        {source === 'upload' && url && <div className="row">
-          <button type="button" className="btn ghost" onClick={() => input.current?.click()}><Icon name="upload" /> Try another photo</button>
+        {source === 'upload' && (url || demo) && <div className="row">
+          {url && <button type="button" className="btn ghost" disabled={busy} onClick={() => input.current?.click()}><Icon name="upload" /> Try another photo</button>}
+          {demo && <button type="button" className="btn ghost" disabled={busy} onClick={() => void choose()}><Icon name="image" /> Try sample photo</button>}
         </div>}
       </div>
 
@@ -174,7 +223,7 @@ export function ModelTester({ orgId, datasetId, model, labels, kindOf }: {
         {result && <section className="card result" aria-live="polite">
           {verdict ? <span className={`verdict ${verdict.toLowerCase()}`}>
             <Icon name={verdict === 'PASS' ? 'check' : 'alert'} /> {verdict}
-          </span> : <h3>{total ? `Found ${total} ${total === 1 ? 'object' : 'objects'}` : 'Nothing found'}</h3>}
+          </span> : <h3>{demo && !showAll ? (total ? `Found ${total} ${total === 1 ? 'person' : 'people'}` : 'No people found') : total ? `Found ${total} ${total === 1 ? 'object' : 'objects'}` : 'Nothing found'}</h3>}
           {verdict === 'FAIL' && <p className="small">{result.decision
             ? 'The objects in this photo do not match the good example.'
             : <>Defect found: <b>{defectsFound.map(label => `${result.found[label]} × ${label}`).join(', ')}</b>.</>}</p>}
@@ -186,7 +235,7 @@ export function ModelTester({ orgId, datasetId, model, labels, kindOf }: {
               const expected = result.expected[label];
               const miss = result.decision !== null && found !== (expected ?? 0);
               return <li key={label} className={miss ? 'miss' : ''}>
-                <span className="swatch" style={{ background: colorFor(labels, label) }} />
+                <span className="swatch" style={{ background: colorFor(colorLabels, label) }} />
                 <span>{label}</span>
                 <span>{found}{result.decision !== null && <span className="muted"> / {expected ?? 0}</span>}</span>
               </li>;
@@ -198,7 +247,7 @@ export function ModelTester({ orgId, datasetId, model, labels, kindOf }: {
   </div>;
 }
 
-function CameraCapture({ busy, onCapture }: { busy: boolean; onCapture: (image: Blob) => void }) {
+function CameraCapture({ busy, onCapture, demo }: { busy: boolean; onCapture: (image: Blob) => void; demo: boolean }) {
   const video = useRef<HTMLVideoElement>(null);
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [deviceId, setDeviceId] = useState('');
@@ -242,7 +291,7 @@ function CameraCapture({ busy, onCapture }: { busy: boolean; onCapture: (image: 
       {!stream && <div className="stage-empty">
         <Icon name="camera" />
         <strong>Live camera</strong>
-        <span className="small">Point the camera at a part, then capture a frame to check it.</span>
+        <span className="small">{demo ? 'Capture a frame with people or objects in view.' : 'Point the camera at a part, then capture a frame to check it.'}</span>
         <button type="button" className="btn" onClick={() => void start()}><Icon name="play" /> Start camera</button>
       </div>}
     </div>

@@ -58,8 +58,8 @@ export interface ImageAnalysis {
   error: string | null;
 }
 
-export function analyzeImage(image: Blob, confidence: number) {
-  const query = new URLSearchParams({ confidence: String(confidence) });
+export function analyzeImage(image: Blob, confidence: number, describe = true) {
+  const query = new URLSearchParams({ confidence: String(confidence), describe: String(describe) });
   return request<ImageAnalysis>(`/api/v1/demo/analyze?${query}`, {
     method: 'POST',
     headers: { 'Content-Type': 'image/jpeg' },

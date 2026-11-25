@@ -468,6 +468,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .
 
 /* Test / use */
 .test-layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 1.25rem; align-items: start; }
+.image-test-layout { grid-template-columns: minmax(0, 1fr) 320px; }
 .versions { display: grid; gap: .5rem; }
 .version { display: grid; grid-template-columns: auto 1fr auto; gap: .7rem; align-items: center; padding: .75rem .85rem; border-radius: 12px; border: 1.5px solid var(--line); background: var(--white); cursor: pointer; text-align: left; }
 .version:hover { border-color: var(--orange-300); }

@@ -4,13 +4,33 @@ import { useWorkspace } from '../context/WorkspaceContext';
 import { listCompletedJobs, listTrainingDatasets, type ProjectSummary, type TrainingJob } from '../services/api/trainingDatasets';
 import { Icon } from '../ui/Icon';
 import { ErrorBox, Loading, errorText, projectHref } from '../ui/common';
-import { ModelTester, versionName } from './ModelTester';
+import { DemoTester, ModelTester, versionName } from './ModelTester';
 
 function requestedProject() {
   return new URLSearchParams(window.location.hash.split('?')[1] ?? '').get('project') ?? '';
 }
 
 export function Inspect() {
+  const [mode, setMode] = useState<'demo' | 'trained'>(() => requestedProject() ? 'trained' : 'demo');
+
+  return <main className="page wide">
+    <header className="page-head">
+      <div>
+        <h1>Inspect</h1>
+        <p>{mode === 'demo'
+          ? 'Find people and common objects in a sample photo, your own photo, or a camera capture.'
+          : 'Check a photo or camera capture with a model trained in your workspace.'}</p>
+      </div>
+      <div className="seg" role="group" aria-label="Model source">
+        <button type="button" aria-pressed={mode === 'demo'} onClick={() => setMode('demo')}>Detection demo</button>
+        <button type="button" aria-pressed={mode === 'trained'} onClick={() => setMode('trained')}>Your trained models</button>
+      </div>
+    </header>
+    {mode === 'demo' ? <DemoTester /> : <TrainedModels />}
+  </main>;
+}
+
+function TrainedModels() {
   const { org } = useWorkspace();
   const orgId = org!.org_id;
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
@@ -47,12 +67,7 @@ export function Inspect() {
   const project = projects?.find(item => item.id === projectId);
   const model = models?.find(item => item.id === modelId) ?? models?.[0];
 
-  return <main className="page wide">
-    <header className="page-head">
-      <div>
-        <h1>Inspect</h1>
-        <p>Check new parts with one of your trained models, from a photo or a live camera.</p>
-      </div>
+  return <>
       {projects && projects.length > 0 && <div className="toolbar">
         <label className="field" style={{ minWidth: 220 }}>Project
           <select value={projectId} onChange={event => setProjectId(event.target.value)}>
@@ -65,7 +80,6 @@ export function Inspect() {
           </select>
         </label>}
       </div>}
-    </header>
 
     {error && <ErrorBox message={error} onRetry={() => setAttempt(value => value + 1)} />}
     {!projects && !error && <Loading />}
@@ -86,5 +100,5 @@ export function Inspect() {
       <ModelTester key={model.id} orgId={orgId} datasetId={project.id} model={model} labels={project.classes}
         kindOf={label => project.class_info?.[label]?.kind ?? 'object'} />
     </>}
-  </main>;
+  </>;
 }
