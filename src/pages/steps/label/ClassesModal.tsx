@@ -12,7 +12,7 @@ const KIND_HELP: Record<ClassKind, string> = {
   object: 'Just found and counted.',
 };
 
-const STARTERS: { title: string; rows: ClassEdit[] }[] = [
+export const STARTERS: { title: string; rows: ClassEdit[] }[] = [
   {
     title: 'Good + Defect',
     rows: [{ name: 'Good', kind: 'good', hint: 'Looks right' }, { name: 'Defect', kind: 'defect', hint: 'Something is wrong' }],

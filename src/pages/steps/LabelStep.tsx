@@ -264,9 +264,9 @@ export function LabelStep({ project, orgId, datasetId, models }: {
   return <main className="page wide" style={{ gap: '1.25rem' }}>
     <header className="page-head">
       <div>
-        <span className="eyebrow"><Icon name="tag" /> Step 2 of 5</span>
-        <h1 style={{ marginTop: '.3rem' }}>Label your photos</h1>
-        <p>Answer the question for each photo. The model learns only from the boxes you draw.</p>
+        <span className="eyebrow"><Icon name="box" /> Step 3 of 6</span>
+        <h1 style={{ marginTop: '.3rem' }}>Mark the photos</h1>
+        <p>One photo at a time. Box every thing you see.</p>
       </div>
       <a className={`btn${project.blockedReason ? ' ghost' : ''}`} href={projectHref(orgId, datasetId, 'train')}>
         {project.blockedReason ? 'Go to training' : 'Next: Train model'} <Icon name="arrow" />
@@ -305,9 +305,9 @@ export function LabelStep({ project, orgId, datasetId, models }: {
           </div>
 
           {labels.length === 0 ? <>
-            <h2><Icon name="lightbulb" /> First, tell us what to look for</h2>
-            <p>Add a class for each kind of thing you want the model to find (for example “Cap” or “Scratch”). Then you draw a box around each one in your photos.</p>
-            <div className="row"><button type="button" className="btn" onClick={() => setEditingClasses(true)}><Icon name="plus" /> Add classes</button></div>
+            <h2><Icon name="target" /> First, say what to find</h2>
+            <p>Name the things, and say if each one is good or bad.</p>
+            <div className="row"><a className="btn" href={projectHref(orgId, datasetId, 'detect')}><Icon name="tag" /> What to find <Icon name="arrow" /></a></div>
           </> : stage === 'ask' ? <>
             <h2>What do you see in this photo?</h2>
             <p>Look at the photo below and click what matches. If there are several, start with one; you add the others next.</p>

@@ -57,7 +57,7 @@ export function TestStep({ project, orgId, datasetId, models }: {
   return <main className="page wide">
     <header className="page-head">
       <div>
-        <span className="eyebrow"><Icon name="inspect" /> Step 4 of 5</span>
+        <span className="eyebrow"><Icon name="inspect" /> Step 5 of 6</span>
         <h1 style={{ marginTop: '.3rem' }}>Test your model</h1>
         <p>Try photos the model has never seen. Check that it finds the right objects before you use it.</p>
       </div>

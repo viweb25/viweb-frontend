@@ -9,7 +9,7 @@ import type { ShellPage } from '../../ui/common';
 /** Where each object-detection section lives. */
 const SECTION_HREF: Record<string, { href: string; pages: ShellPage[] }> = {
   guide: { href: '#/guide', pages: ['guide'] },
-  projects: { href: '#/', pages: ['home'] },
+  projects: { href: '#/projects', pages: ['projects'] },
   programs: { href: '#/programs', pages: ['programs', 'program'] },
   results: { href: '#/results', pages: ['results'] },
   inspect: { href: '#/inspect', pages: ['inspect'] },
@@ -29,7 +29,7 @@ const FALLBACK: ProductModule[] = [{
 
 let cachedModules: ProductModule[] | null = null;
 
-function useModules() {
+export function useModules() {
   const [modules, setModules] = useState<ProductModule[]>(cachedModules ?? FALLBACK);
   useEffect(() => {
     if (cachedModules) return;
@@ -86,6 +86,9 @@ export function AppShell({ page, moduleKey, orgId, children }: {
     <Topbar />
     <div className="shell">
       <nav className="sidebar" aria-label="Modules">
+        <a href="#/" className="side-module side-home" aria-current={page === 'home' ? 'page' : undefined}>
+          <span className="side-icon"><Icon name="home" /></span><span className="spacer">Home</span>
+        </a>
         {modules.map(module => {
           const available = module.status === 'available';
           if (!available) {

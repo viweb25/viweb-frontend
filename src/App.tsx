@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useSession } from './context/SessionContext';
 import { useWorkspace } from './context/WorkspaceContext';
 import { Dashboard } from './pages/Dashboard';
+import { Home } from './pages/Home';
 import { Inspect } from './pages/Inspect';
 import { ProjectStudio } from './pages/ProjectStudio';
 import { Team } from './pages/Team';
@@ -15,7 +16,7 @@ import { Icon, Logo } from './ui/Icon';
 import { initials, useRoute, type ShellPage } from './ui/common';
 
 const TITLES: Record<ShellPage, string> = {
-  home: 'Projects', guide: 'Getting started', programs: 'Inspection programs', program: 'Inspection program',
+  home: 'Home', projects: 'Projects', guide: 'Getting started', programs: 'Inspection programs', program: 'Inspection program',
   results: 'Results and review', inspect: 'Quick check', team: 'Workspace', module: 'Module',
 };
 
@@ -52,7 +53,7 @@ export function App() {
         <main className="page narrow"><div className="empty">
           <span className="bubble"><Icon name="lock" /></span>
           <h2>This project is not in your workspaces</h2>
-          <a className="btn" href="#/">Back to projects</a>
+          <a className="btn" href="#/projects">Back to projects</a>
         </div></main>
       </>;
     }
@@ -61,7 +62,8 @@ export function App() {
   }
 
   return <AppShell page={route.page} moduleKey={route.page === 'module' ? route.key : undefined} orgId={org.org_id}>
-    {route.page === 'home' && <Dashboard key={org.org_id} />}
+    {route.page === 'home' && <Home />}
+    {route.page === 'projects' && <Dashboard key={org.org_id} />}
     {route.page === 'guide' && <GuidePage />}
     {route.page === 'programs' && <ProgramsPage key={org.org_id} />}
     {route.page === 'program' && <ProgramEditor key={`${org.org_id}/${route.id}`} programId={route.id} />}

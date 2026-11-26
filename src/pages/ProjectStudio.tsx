@@ -6,6 +6,7 @@ import { listCompletedJobs, type TrainingJob } from '../services/api/trainingDat
 import { Icon, type IconName } from '../ui/Icon';
 import { ErrorBox, Loading, STEPS, projectHref, type Step } from '../ui/common';
 import { MIN_PHOTOS_TO_TRAIN, useProject, type Project } from './project/useProject';
+import { DetectStep } from './steps/DetectStep';
 import { LabelStep } from './steps/LabelStep';
 import { TestStep } from './steps/TestStep';
 import { TrainStep } from './steps/TrainStep';
@@ -13,8 +14,9 @@ import { UploadStep } from './steps/UploadStep';
 import { UseStep } from './steps/UseStep';
 
 const STEP_INFO: Record<Step, { label: string; icon: IconName; tip: string }> = {
-  upload: { label: 'Upload', icon: 'upload', tip: 'Add photos like the ones your camera will see' },
-  label: { label: 'Label', icon: 'tag', tip: 'Draw boxes to show the model what to find' },
+  detect: { label: 'Set up', icon: 'sliders', tip: 'Name the project and what to find, good or bad' },
+  upload: { label: 'Photos', icon: 'camera', tip: 'Add photos like the ones your camera will see' },
+  label: { label: 'Mark', icon: 'box', tip: 'Draw a box around each thing in each photo' },
   train: { label: 'Train', icon: 'play', tip: 'Let the model learn from your boxes' },
   test: { label: 'Test', icon: 'inspect', tip: 'Try the model on new photos' },
   use: { label: 'Use', icon: 'rocket', tip: 'Download the model or inspect parts' },
@@ -52,6 +54,7 @@ export function ProjectStudio({ orgId, datasetId, step }: { orgId: string; datas
 
   const done: Record<Step, boolean> = {
     upload: project.photos.length >= MIN_PHOTOS_TO_TRAIN,
+    detect: project.labels.length > 0,
     label: project.photos.length > 0 && !project.blockedReason,
     train: !!models?.length,
     test: false,
@@ -61,7 +64,7 @@ export function ProjectStudio({ orgId, datasetId, step }: { orgId: string; datas
   return <>
     <Topbar right={<SaveState project={project} />} compact>
       <div className="crumb">
-        <a href="#/"><Icon name="back" /><span className="lbl-hide">Projects</span></a>
+        <a href="#/projects"><Icon name="back" /><span className="lbl-hide">Projects</span></a>
         <span aria-hidden="true">/</span>
         <strong title={project.name}>{project.name || '…'}</strong>
       </div>
@@ -83,6 +86,7 @@ export function ProjectStudio({ orgId, datasetId, step }: { orgId: string; datas
     {project.status === 'error' && <main className="page narrow"><ErrorBox message={project.loadError} onRetry={project.reload} /></main>}
     {project.status === 'ready' && <>
       {step === 'upload' && <UploadStep project={project} orgId={orgId} datasetId={datasetId} />}
+      {step === 'detect' && <DetectStep project={project} orgId={orgId} datasetId={datasetId} />}
       {step === 'label' && <LabelStep project={project} orgId={orgId} datasetId={datasetId} models={models ?? []} />}
       {step === 'train' && <TrainStep project={project} orgId={orgId} datasetId={datasetId}
         onModelsChanged={() => setModelsVersion(value => value + 1)} />}

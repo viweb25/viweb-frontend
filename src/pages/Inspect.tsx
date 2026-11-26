@@ -87,7 +87,7 @@ function TrainedModels() {
       <span className="bubble"><Icon name="inspect" /></span>
       <h2>No trained models yet</h2>
       <p className="muted" style={{ maxWidth: '44ch' }}>Create a project, label your photos and train a model. It will appear here, ready to check new parts.</p>
-      <a className="btn" href="#/">Go to projects</a>
+      <a className="btn" href="#/projects">Go to projects</a>
     </div>}
     {project && !models && <Loading label="Loading models…" />}
     {project && model && <>

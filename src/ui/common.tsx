@@ -4,10 +4,11 @@ import { Icon } from './Icon';
 
 /* ---------- Routing ---------- */
 
-export const STEPS = ['upload', 'label', 'train', 'test', 'use'] as const;
+export const STEPS = ['detect', 'upload', 'label', 'train', 'test', 'use'] as const;
 export type Step = typeof STEPS[number];
 export type Route =
   | { page: 'home' }
+  | { page: 'projects' }
   | { page: 'guide' }
   | { page: 'programs' }
   | { page: 'program'; id: string }
@@ -23,9 +24,10 @@ export type ShellPage = Exclude<Route['page'], 'project'>;
 export function parseRoute(hash = window.location.hash): Route {
   const parts = hash.replace(/^#\/?/, '').split('?')[0].split('/').filter(Boolean).map(decodeURIComponent);
   if (parts[0] === 'projects' && parts[1] && parts[2]) {
-    const step = (STEPS as readonly string[]).includes(parts[3]) ? parts[3] as Step : 'upload';
+    const step = (STEPS as readonly string[]).includes(parts[3]) ? parts[3] as Step : 'detect';
     return { page: 'project', org: parts[1], dataset: parts[2], step };
   }
+  if (parts[0] === 'projects') return { page: 'projects' };
   if (parts[0] === 'programs') return parts[1] ? { page: 'program', id: parts[1] } : { page: 'programs' };
   if (parts[0] === 'results') return parts[1] ? { page: 'results', run: parts[1] } : { page: 'results' };
   if (parts[0] === 'modules' && parts[1]) return { page: 'module', key: parts[1] };
@@ -35,7 +37,7 @@ export function parseRoute(hash = window.location.hash): Route {
   return { page: 'home' };
 }
 
-export function projectHref(org: string, dataset: string, step: Step = 'upload') {
+export function projectHref(org: string, dataset: string, step: Step = 'detect') {
   return `#/projects/${encodeURIComponent(org)}/${encodeURIComponent(dataset)}/${step}`;
 }
 

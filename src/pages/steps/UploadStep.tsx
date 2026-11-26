@@ -1,10 +1,11 @@
 import { useRef, useState } from 'react';
 
 import { Icon } from '../../ui/Icon';
-import { PhotoMix, TeachingLoop } from '../../ui/Illustrations';
-import { projectHref } from '../../ui/common';
+import { PhotoMix } from '../../ui/Illustrations';
+import { KindBadge } from '../../ui/KindBadge';
+import { colorFor, projectHref } from '../../ui/common';
 import { BoxOverlay, PhotoImage } from '../project/PhotoViews';
-import { MAX_PHOTOS, MIN_PHOTOS_TO_TRAIN, type AddResult, type Project } from '../project/useProject';
+import { GOOD_PHOTOS_PER_CLASS, MAX_PHOTOS, MIN_PHOTOS_TO_TRAIN, type AddResult, type Project } from '../project/useProject';
 
 function plural(count: number, one: string, many: string) {
   return `${count} ${count === 1 ? one : many}`;
@@ -48,12 +49,12 @@ export function UploadStep({ project, orgId, datasetId }: { project: Project; or
   return <main className="page">
     <header className="page-head">
       <div>
-        <span className="eyebrow"><Icon name="upload" /> Step 1 of 5</span>
-        <h1 style={{ marginTop: '.3rem' }}>Upload your photos</h1>
-        <p>Add photos that look like what your camera will see. Next you will name what the model should find and mark it in your photos.</p>
+        <span className="eyebrow"><Icon name="camera" /> Step 2 of 6</span>
+        <h1 style={{ marginTop: '.3rem' }}>Add photos</h1>
+        <p>Good boards and bad boards. Same camera, same light.</p>
       </div>
       {photos.length > 0 && <a className="btn" href={projectHref(orgId, datasetId, 'label')}>
-        Next: Label {plural(photos.length, 'photo', 'photos')} <Icon name="arrow" />
+        Next: Mark photos <Icon name="arrow" />
       </a>}
     </header>
 
@@ -89,34 +90,35 @@ export function UploadStep({ project, orgId, datasetId }: { project: Project; or
       </div>
     </div>}
 
-    <section className="card explain">
-      <h2><Icon name="lightbulb" /> Which photos should I upload?</h2>
+    {project.labels.length > 0 ? <section className="card collect" aria-labelledby="collect-h">
+      <div className="collect-text">
+        <h2 id="collect-h"><Icon name="camera" /> Photos to collect</h2>
+        <p className="muted small">Each photo can show several things. Aim for about {GOOD_PHOTOS_PER_CLASS} photos where you can see each one.</p>
+        <ul className="collect-list">
+          {project.labels.map(label => <li key={label}>
+            <span className="swatch" style={{ background: colorFor(project.labels, label) }} />
+            <span className="spacer"><code>{label}</code> <KindBadge kind={project.kindOf(label)} />
+              {project.classInfo[label]?.hint && <small>{project.classInfo[label].hint}</small>}</span>
+            <span className="collect-target">{GOOD_PHOTOS_PER_CLASS}+ photos</span>
+          </li>)}
+          <li>
+            <span className="swatch" style={{ background: 'var(--line-2)' }} />
+            <span className="spacer"><b>Empty</b> <small>Nothing to find: empty belt, no board</small></span>
+            <span className="collect-target">2–5 photos</span>
+          </li>
+        </ul>
+        <a className="btn link small" href={projectHref(orgId, datasetId, 'detect')}><Icon name="tag" /> Change names</a>
+      </div>
       <PhotoMix passFail={project.passFail} />
-      {project.passFail ? <ul className="checklist">
-        <li className="ok"><span className="mark"><Icon name="check" /></span><span><b>Good ones:</b> {classList(project, 'good')}. About 10–20 photos.</span></li>
-        <li className="warn"><span className="mark"><Icon name="alert" /></span><span><b>Defective ones:</b> {classList(project, 'defect')}. About the same number as the good ones.</span></li>
-        <li className="ok"><span className="mark"><Icon name="check" /></span><span><b>A few empty photos</b> (nothing to check in view). 2–5 photos.</span></li>
-        <li className="ok"><span className="mark"><Icon name="check" /></span><span>Upload them <b>all together, mixed</b>. You say which is which in the next step.</span></li>
-      </ul> : <ul className="checklist">
-        <li className="ok"><span className="mark"><Icon name="check" /></span><span>Photos showing {project.labels.length ? project.labels.join(', ') : 'what you want the model to find'}. Aim for 10–20 photos for each kind of thing.</span></li>
-        <li className="ok"><span className="mark"><Icon name="check" /></span><span><b>A few empty photos</b> with nothing to find, so the model learns what to ignore.</span></li>
-      </ul>}
-      <div className="tips">
-        <div className="tip"><Icon name="camera" /><div><strong>Same setup as production</strong><p>Same camera angle, distance and lighting you will inspect with.</p></div></div>
-        <div className="tip"><Icon name="layers" /><div><strong>Variety helps</strong><p>Different positions, backgrounds and lighting make the model more reliable.</p></div></div>
-        <div className="tip"><Icon name="inspect" /><div><strong>Keep a few aside</strong><p>Don't upload every photo. Keep 5–10 new ones to test the model later.</p></div></div>
-      </div>
-    </section>
+    </section> : <div className="notice"><Icon name="info" /><span className="spacer">Set up what to find first, then we tell you which photos to take.</span>
+      <a className="btn ghost small" href={projectHref(orgId, datasetId, 'detect')}>Set up</a></div>}
 
-    <section className="card explain loop-card">
-      <TeachingLoop current="upload" />
-      <div className="stack" style={{ gap: '.6rem' }}>
-        <h2>Teaching is a loop, not a one-off</h2>
-        <p className="muted">Your first model will make mistakes. That is normal. Test it, then add photos like the ones it got wrong, label them and train again.
-          Each round makes it better.</p>
-        <p className="small muted"><Icon name="info" /> You can come back to this step any time to add more photos.</p>
-      </div>
-    </section>
+    <ul className="up-tips" aria-label="Photo tips">
+      <li><span className="up-tip-icon ok"><Icon name="check" /></span><b>Good boards</b><small>10–20 photos</small></li>
+      <li><span className="up-tip-icon bad"><Icon name="close" /></span><b>Bad boards</b><small>About the same</small></li>
+      <li><span className="up-tip-icon"><Icon name="camera" /></span><b>Same camera</b><small>Same place, same light</small></li>
+      <li><span className="up-tip-icon"><Icon name="inspect" /></span><b>Keep 5 aside</b><small>To test later</small></li>
+    </ul>
 
     {photos.length > 0 && <section className="stack">
       <div className="page-head">
@@ -141,16 +143,8 @@ export function UploadStep({ project, orgId, datasetId }: { project: Project; or
     </section>}
 
     {photos.length > 0 && <div className="step-actions">
-      <a className="btn ghost" href="#/"><Icon name="back" /> All projects</a>
-      <a className="btn" href={projectHref(orgId, datasetId, 'label')}>Next: Label photos <Icon name="arrow" /></a>
+      <a className="btn ghost" href="#/projects"><Icon name="back" /> All projects</a>
+      <a className="btn" href={projectHref(orgId, datasetId, 'label')}>Next: Mark photos <Icon name="arrow" /></a>
     </div>}
   </main>;
-}
-
-/** The classes of one kind with their hints, or a plain description when there are none yet. */
-function classList(project: Project, kind: 'good' | 'defect') {
-  const names = project.labels.filter(label => project.kindOf(label) === kind)
-    .map(label => `${label}${project.classInfo[label]?.hint ? ` (${project.classInfo[label].hint})` : ''}`);
-  if (names.length) return names.join(', ');
-  return kind === 'good' ? 'parts that look right' : 'parts with a problem (add a Defect class in Label → Edit to flag them)';
 }

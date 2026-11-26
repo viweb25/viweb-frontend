@@ -3,11 +3,11 @@ import { useEffect, useRef, useState } from 'react';
 import {
   cancelTrainingJob, checkpointUrl, loadTrainingJob, startTrainingJob, type TrainingJob, type TrainingOptions,
 } from '../../services/api/trainingDatasets';
-import { Icon } from '../../ui/Icon';
+import { Icon, type IconName } from '../../ui/Icon';
 import {
   ErrorBox, Loading, QUALITY, errorText, percent, projectHref, qualityBand, qualityPosition, useToast,
 } from '../../ui/common';
-import type { Project } from '../project/useProject';
+import { MIN_PHOTOS_PER_CLASS, MIN_PHOTOS_TO_TRAIN, type Project } from '../project/useProject';
 import { PhaseSteps, PhotoReadiness, SpeedPicker, TrainingDiagram } from './train/TrainParts';
 import { AdvancedSettings, isCustomized, optionsFor, optionsProblem, type Preset } from './train/AdvancedSettings';
 
@@ -118,12 +118,14 @@ function SetupView({ project, orgId, datasetId, onStarted }: {
 
   return <>
     <header className="page-head center">
-      <span className="eyebrow"><Icon name="play" /> Step 3 of 5</span>
+      <span className="eyebrow"><Icon name="play" /> Step 4 of 6</span>
       <h1 style={{ fontSize: 'clamp(2rem, 4vw, 3rem)' }}>Train your model</h1>
-      <p>Three quick checks, then press Start.</p>
+      <p>Orange means “do this first”. Tap it to fix.</p>
     </header>
 
-    <PhotoReadiness project={project} fixHref={projectHref(orgId, datasetId, 'label')} />
+    <ReadyChecklist project={project} orgId={orgId} datasetId={datasetId} />
+    <PhotoReadiness project={project} fixHref={projectHref(orgId, datasetId,
+      project.photos.length < MIN_PHOTOS_TO_TRAIN ? 'upload' : !project.labels.length ? 'detect' : 'label')} />
     <TrainingDiagram />
     <SpeedPicker preset={preset} onChoose={choose} />
 
@@ -281,4 +283,29 @@ function formatEta(seconds: number) {
   if (minutes < 60) return `About ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`;
   const hours = Math.round(minutes / 6) / 10;
   return `About ${hours} ${hours === 1 ? 'hour' : 'hours'}`;
+}
+
+/** Four ticks before training. Each one links to the step that fixes it. */
+function ReadyChecklist({ project, orgId, datasetId }: { project: Project; orgId: string; datasetId: string }) {
+  const thin = project.labels.filter(label => (project.labelCounts[label] ?? 0) < MIN_PHOTOS_PER_CLASS);
+  const items: { icon: IconName; title: string; ok: boolean; hint: string; step: 'upload' | 'detect' | 'label' }[] = [
+    { icon: 'tag', title: 'What to find', step: 'detect', ok: project.labels.length > 0,
+      hint: project.labels.length ? project.labels.slice(0, 3).join(', ') + (project.labels.length > 3 ? '…' : '') : 'Not set' },
+    { icon: 'flag', title: 'Pass / fail', step: 'detect', ok: project.passFail,
+      hint: project.passFail ? 'Rule set' : 'Optional' },
+    { icon: 'camera', title: 'Photos', step: 'upload', ok: project.photos.length >= MIN_PHOTOS_TO_TRAIN,
+      hint: project.photos.length >= MIN_PHOTOS_TO_TRAIN ? `${project.photos.length} added` : `Add ${MIN_PHOTOS_TO_TRAIN - project.photos.length} more` },
+    { icon: 'box', title: 'Marked', step: thin.length ? 'upload' : 'label',
+      ok: project.photos.length > 0 && project.reviewed === project.photos.length && !thin.length,
+      hint: thin.length ? `More photos of ${thin[0]}` : `${project.reviewed}/${project.photos.length} photos` },
+  ];
+  return <ol className="ready-list" aria-label="Ready to train?">
+    {items.map(item => <li key={item.title} className={item.ok ? 'ok' : item.title === 'Pass / fail' ? 'opt' : 'todo'}>
+      <a href={projectHref(orgId, datasetId, item.step)}>
+        <span className="ready-icon"><Icon name={item.ok ? 'check' : item.icon} /></span>
+        <strong>{item.title}</strong>
+        <small>{item.hint}</small>
+      </a>
+    </li>)}
+  </ol>;
 }
