@@ -3,11 +3,22 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useSession } from './context/SessionContext';
 import { useWorkspace } from './context/WorkspaceContext';
 import { Dashboard } from './pages/Dashboard';
+import { Home } from './pages/Home';
 import { Inspect } from './pages/Inspect';
 import { ProjectStudio } from './pages/ProjectStudio';
 import { Team } from './pages/Team';
+import { AppShell, ModulePage } from './pages/detection/AppShell';
+import { GuidePage } from './pages/detection/GuidePage';
+import { ProgramEditor } from './pages/detection/ProgramEditor';
+import { ProgramsPage } from './pages/detection/ProgramsPage';
+import { ResultsPage } from './pages/detection/ResultsPage';
 import { Icon, Logo } from './ui/Icon';
-import { initials, useRoute } from './ui/common';
+import { initials, useRoute, type ShellPage } from './ui/common';
+
+const TITLES: Record<ShellPage, string> = {
+  home: 'Home', projects: 'Projects', guide: 'Getting started', programs: 'Inspection programs', program: 'Inspection program',
+  results: 'Results and review', inspect: 'Quick check', team: 'Workspace', module: 'Module',
+};
 
 export function App() {
   const route = useRoute();
@@ -20,14 +31,12 @@ export function App() {
   }, [route, org, organisations, select]);
 
   useEffect(() => {
-    document.title = route.page === 'project' ? 'Project · Vision Studio'
-      : route.page === 'inspect' ? 'Inspect · Vision Studio'
-        : route.page === 'team' ? 'Workspace · Vision Studio' : 'Projects · Vision Studio';
+    document.title = `${route.page === 'project' ? 'Project' : TITLES[route.page]} · Vision Studio`;
     window.scrollTo(0, 0);
   }, [route.page]);
 
   if (!org) return <>
-    <Topbar><MainNav current="home" /></Topbar>
+    <Topbar />
     <main className="page narrow">
       <div className="empty">
         <span className="bubble"><Icon name="building" /></span>
@@ -40,11 +49,11 @@ export function App() {
   if (route.page === 'project') {
     if (route.org !== org.org_id && !organisations.some(item => item.org_id === route.org)) {
       return <>
-        <Topbar><MainNav current="home" /></Topbar>
+        <Topbar />
         <main className="page narrow"><div className="empty">
           <span className="bubble"><Icon name="lock" /></span>
           <h2>This project is not in your workspaces</h2>
-          <a className="btn" href="#/">Back to projects</a>
+          <a className="btn" href="#/projects">Back to projects</a>
         </div></main>
       </>;
     }
@@ -52,25 +61,17 @@ export function App() {
     return <ProjectStudio key={`${route.org}/${route.dataset}`} orgId={route.org} datasetId={route.dataset} step={route.step} />;
   }
 
-  return <>
-    <Topbar><MainNav current={route.page} /></Topbar>
-    {route.page === 'home' && <Dashboard key={org.org_id} />}
+  return <AppShell page={route.page} moduleKey={route.page === 'module' ? route.key : undefined} orgId={org.org_id}>
+    {route.page === 'home' && <Home />}
+    {route.page === 'projects' && <Dashboard key={org.org_id} />}
+    {route.page === 'guide' && <GuidePage />}
+    {route.page === 'programs' && <ProgramsPage key={org.org_id} />}
+    {route.page === 'program' && <ProgramEditor key={`${org.org_id}/${route.id}`} programId={route.id} />}
+    {route.page === 'results' && <ResultsPage key={org.org_id} runId={route.run} />}
     {route.page === 'inspect' && <Inspect key={org.org_id} />}
     {route.page === 'team' && <Team key={org.org_id} />}
-  </>;
-}
-
-function MainNav({ current }: { current: 'home' | 'inspect' | 'team' }) {
-  const items = [
-    { page: 'home', href: '#/', label: 'Projects', icon: 'grid' },
-    { page: 'inspect', href: '#/inspect', label: 'Inspect', icon: 'inspect' },
-    { page: 'team', href: '#/team', label: 'Workspace', icon: 'team' },
-  ] as const;
-  return <nav className="mainnav" aria-label="Main">
-    {items.map(item => <a key={item.page} href={item.href} aria-current={current === item.page ? 'page' : undefined}>
-      <Icon name={item.icon} /><span className="lbl">{item.label}</span>
-    </a>)}
-  </nav>;
+    {route.page === 'module' && <ModulePage moduleKey={route.key} />}
+  </AppShell>;
 }
 
 export function Topbar({ children, right, compact }: { children?: ReactNode; right?: ReactNode; compact?: boolean }) {

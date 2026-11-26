@@ -26,7 +26,7 @@ export function VersionList({ models, selected, onSelect }: {
           </strong>
           <small>Trained {timeAgo(model.finished_at ?? model.created_at)}</small>
         </span>
-        <span className="score" title="Test score (mAP50–95)">{score === undefined ? '' : QUALITY[qualityBand(score)]}</span>
+        <span className="score" title="Test score">{score === undefined ? '' : QUALITY[qualityBand(score)]}</span>
       </button>;
     })}
   </div>;
@@ -247,7 +247,7 @@ function ImageTester({ labels, kindOf, views = [], check, demo = false }: {
   </div>;
 }
 
-function CameraCapture({ busy, onCapture, demo }: { busy: boolean; onCapture: (image: Blob) => void; demo: boolean }) {
+export function CameraCapture({ busy, onCapture, demo }: { busy: boolean; onCapture: (image: Blob) => void; demo: boolean }) {
   const video = useRef<HTMLVideoElement>(null);
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [deviceId, setDeviceId] = useState('');
@@ -312,7 +312,7 @@ function CameraCapture({ busy, onCapture, demo }: { busy: boolean; onCapture: (i
 export function ScoreTable({ models }: { models: TrainingJob[] }) {
   if (!models.some(model => model.evaluation)) return null;
   return <div className="table-wrap"><table className="data">
-    <thead><tr><th>Version</th><th>Quality</th><th>Precision</th><th>Recall</th><th>mAP50</th><th>mAP50–95</th></tr></thead>
+    <thead><tr><th>Version</th><th>Quality</th><th>Right when it finds</th><th>Finds what is there</th><th>Easy score</th><th>Overall score</th></tr></thead>
     <tbody>{models.map(model => {
       const value = (key: string) => model.evaluation?.[`metrics/${key}(B)`];
       const score = value('mAP50-95');

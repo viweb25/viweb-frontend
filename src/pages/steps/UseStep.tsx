@@ -4,7 +4,7 @@ import { checkpointUrl, type TrainingJob } from '../../services/api/trainingData
 import { Icon } from '../../ui/Icon';
 import { Loading, projectHref, useToast } from '../../ui/common';
 import { ScoreTable, VersionList, versionName } from '../ModelTester';
-import type { Project } from '../ProjectStudio';
+import type { Project } from '../project/useProject';
 import { NoModelYet } from './TestStep';
 
 export function UseStep({ project, orgId, datasetId, models }: {
@@ -30,7 +30,7 @@ for box in results[0].boxes:
   return <main className="page">
     <header className="page-head">
       <div>
-        <span className="eyebrow">Step 5 of 5</span>
+        <span className="eyebrow">Step 6 of 6</span>
         <h1 style={{ marginTop: '.3rem' }}>Use your model</h1>
         <p>Check parts live in Vision Studio, or download the model to run it on your own machines.</p>
       </div>

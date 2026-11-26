@@ -43,6 +43,13 @@ const paths = {
   dots: 'M5 12h.01M12 12h.01M19 12h.01',
   sliders: 'M4 7h10m4 0h2M4 17h4m4 0h8M14 4v6M8 14v6',
   rocket: 'M5 15c-1.5 1.5-2 5-2 5s3.5-.5 5-2M9 15l-3-3a12 12 0 0 1 12-8 12 12 0 0 1-8 12zm6-6h.01',
+  refresh: 'M20 11a8 8 0 0 0-14.9-3M4 4v4h4m-4 5a8 8 0 0 0 14.9 3M20 20v-4h-4',
+  tag: 'M3 12V3h9l9 9-9 9zM8 8h.01',
+  flag: 'M5 21V4m0 0h11l-2 4 2 4H5',
+  terminal: 'M3 5h18v14H3zM7 10l3 2-3 2m5 0h5',
+  help: 'M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20zM9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6m0 3.5h.01',
+  lightbulb: 'M9 18h6m-5 3h4M12 3a6 6 0 0 0-3.5 10.9c.6.4 1 1.1 1 1.8V16h5v-.3c0-.7.4-1.4 1-1.8A6 6 0 0 0 12 3z',
+  wand: 'M4 20 15 9m-2-2 2-2 4 4-2 2M17 3v2m4 4h-2M19 5l1-1',
 } as const;
 
 export type IconName = keyof typeof paths;

@@ -1,17 +1,31 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { makeJpeg } from '../../inspectionImage';
-import { previewTrainedModel, type Box, type ClassKind, type Point, type TrainingJob } from '../../services/api/trainingDatasets';
-import { Icon } from '../../ui/Icon';
-import { KIND_LABEL, Modal, colorFor, errorText, projectHref } from '../../ui/common';
-import { PhotoImage, type Photo, type Project } from '../ProjectStudio';
+import { previewTrainedModel, type Box, type TrainingJob } from '../../services/api/trainingDatasets';
+import { Icon, type IconName } from '../../ui/Icon';
+import { BoxExamples, WaysToTeach } from '../../ui/Illustrations';
+import { KindBadge } from '../../ui/KindBadge';
+import { colorFor, errorText, projectHref } from '../../ui/common';
+import { PhotoImage } from '../project/PhotoViews';
+import { GOOD_PHOTOS_PER_CLASS, type Photo, type Project } from '../project/useProject';
+import { ClassesModal } from './label/ClassesModal';
+import { LabelCanvas } from './label/LabelCanvas';
 
 type Filter = 'all' | 'todo' | 'done';
+/** ask = "what do you see?", draw = drag a box, more = "anything else?", done = photo finished. */
 type Stage = 'ask' | 'draw' | 'more' | 'done';
 
-function clamp(value: number) {
-  return Math.min(1, Math.max(0, value));
-}
+const SUGGEST_CONFIDENCE = .4;
+const MAX_SUGGESTED_BOXES = 300;
+const ZOOM_MIN = 100;
+const ZOOM_MAX = 300;
+const ZOOM_STEP = 25;
+
+const GUIDE_STEPS: { stage: Stage; icon: IconName; label: string }[] = [
+  { stage: 'ask', icon: 'eye', label: 'What is in it?' },
+  { stage: 'draw', icon: 'box', label: 'Draw a box' },
+  { stage: 'more', icon: 'plus', label: 'Anything else?' },
+];
 
 function summary(boxes: Box[]) {
   if (!boxes.length) return 'Nothing to label';
@@ -20,9 +34,17 @@ function summary(boxes: Box[]) {
   return [...counts].map(([label, count]) => `${count} × ${label}`).join(', ');
 }
 
-export function KindBadge({ kind }: { kind: ClassKind }) {
-  if (kind === 'object') return null;
-  return <span className={`kind ${kind}`}><Icon name={kind === 'good' ? 'check' : 'alert'} />{KIND_LABEL[kind]}</span>;
+async function photoAsJpeg(photo: Photo): Promise<Blob> {
+  let image: Blob | undefined = photo.file;
+  if (!image && photo.savedUrl) {
+    const response = await fetch(photo.savedUrl);
+    if (!response.ok) throw new Error('Could not open the saved photo.');
+    image = await response.blob();
+  }
+  if (!image) throw new Error('Could not open this photo.');
+  if (image.type === 'image/jpeg') return image;
+  const bitmap = await createImageBitmap(image);
+  try { return await makeJpeg(bitmap, bitmap.width, bitmap.height); } finally { bitmap.close(); }
 }
 
 export function LabelStep({ project, orgId, datasetId, models }: {
@@ -38,7 +60,7 @@ export function LabelStep({ project, orgId, datasetId, models }: {
   const [lastAdded, setLastAdded] = useState('');
   const [selectedBox, setSelectedBox] = useState<number | null>(null);
   const [filter, setFilter] = useState<Filter>('all');
-  const [zoom, setZoom] = useState(100);
+  const [zoom, setZoom] = useState(ZOOM_MIN);
   const [editingClasses, setEditingClasses] = useState(false);
   const [message, setMessage] = useState('');
   const [suggesting, setSuggesting] = useState(false);
@@ -46,7 +68,9 @@ export function LabelStep({ project, orgId, datasetId, models }: {
   const photo: Photo | undefined = photos[index];
   const filtered = useMemo(() => photos.filter(item =>
     filter === 'all' || (filter === 'done' ? item.reviewed : !item.reviewed)), [photos, filter]);
+  const positions = useMemo(() => new Map(photos.map((item, position) => [item.id, position])), [photos]);
   const allDone = photos.length > 0 && photos.every(item => item.reviewed);
+  const newestModel = models[0]; // The API lists completed models newest first.
 
   useEffect(() => {
     if (!labels.includes(activeClass)) setActiveClass(labels[0] ?? '');
@@ -59,6 +83,8 @@ export function LabelStep({ project, orgId, datasetId, models }: {
     setStage(photo?.reviewed ? 'done' : photo?.boxes.length ? 'more' : 'ask');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId]);
+
+  /* ---------- Actions ---------- */
 
   function go(offset: number) {
     if (!photos.length) return;
@@ -78,6 +104,7 @@ export function LabelStep({ project, orgId, datasetId, models }: {
   function chooseClass(label: string) {
     setActiveClass(label);
     setStage('draw');
+    setMessage('');
     requestAnimationFrame(() => document.querySelector('.canvas-viewport')?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
   }
 
@@ -106,14 +133,22 @@ export function LabelStep({ project, orgId, datasetId, models }: {
     }));
   }
 
+  /** Mark the photo done. A photo with no boxes must be marked empty on purpose (nothingHere). */
   function finishPhoto() {
     if (!photo) return;
+    if (!photo.boxes.length) {
+      setMessage('This photo has no boxes yet. Draw a box, or choose “None of these” (key E) if there is nothing to label.');
+      return;
+    }
     project.updatePhoto(photo.id, current => ({ ...current, reviewed: true }));
     nextTodo();
   }
 
+  /** Mark the photo as "nothing to label". Asks first if that would delete boxes. */
   function nothingHere() {
     if (!photo) return;
+    const count = photo.boxes.length;
+    if (count && !window.confirm(`Mark this photo as empty? This deletes its ${count} ${count === 1 ? 'box' : 'boxes'}.`)) return;
     project.updatePhoto(photo.id, current => ({ ...current, boxes: [], reviewed: true }));
     nextTodo();
   }
@@ -129,56 +164,28 @@ export function LabelStep({ project, orgId, datasetId, models }: {
     if (photo?.boxes.length) removeBox(photo.boxes.length - 1);
   }
 
-  // Keyboard shortcuts for experienced users.
-  const handlers = useRef({ go, finishPhoto, nothingHere, undo, removeBox, chooseClass, selectedBox, labels, canEdit, setZoom, stage });
-  handlers.current = { go, finishPhoto, nothingHere, undo, removeBox, chooseClass, selectedBox, labels, canEdit, setZoom, stage };
-  useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      const target = event.target as HTMLElement;
-      if (target.closest('input, textarea, select, [contenteditable=true], [role=dialog]')) return;
-      const h = handlers.current;
-      if (event.key === 'ArrowRight') { event.preventDefault(); h.go(1); return; }
-      if (event.key === 'ArrowLeft') { event.preventDefault(); h.go(-1); return; }
-      if (event.key === '+' || event.key === '=') { h.setZoom(value => Math.min(300, value + 25)); return; }
-      if (event.key === '-') { h.setZoom(value => Math.max(100, value - 25)); return; }
-      if (!h.canEdit) return;
-      if (/^[1-9]$/.test(event.key) && !event.ctrlKey && !event.metaKey) {
-        const label = h.labels[Number(event.key) - 1];
-        if (label) h.chooseClass(label);
-        return;
-      }
-      if (event.key === 'Enter' && !target.closest('button, a')) { event.preventDefault(); h.finishPhoto(); return; }
-      if (event.key.toLowerCase() === 'e' && !event.ctrlKey && !event.metaKey) { h.nothingHere(); return; }
-      if (event.key.toLowerCase() === 'z' && !event.shiftKey) { event.preventDefault(); h.undo(); return; }
-      if ((event.key === 'Delete' || event.key === 'Backspace') && h.selectedBox !== null) {
-        event.preventDefault();
-        h.removeBox(h.selectedBox);
-      }
-    }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  function removePhoto() {
+    if (!photo || !window.confirm('Remove this photo from the project?')) return;
+    const id = photo.id;
+    go(1);
+    project.setPhotos(current => current.filter(item => item.id !== id));
+  }
+
+  function changeZoom(delta: number) {
+    setZoom(value => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, value + delta)));
+  }
 
   async function suggest() {
-    const latestModel = models[0];
-    if (!photo || !latestModel || suggesting) return;
+    if (!photo || !newestModel || suggesting) return;
     setSuggesting(true);
     setMessage('');
     try {
-      let image: Blob | undefined = photo.file;
-      if (!image && photo.savedUrl) {
-        const response = await fetch(photo.savedUrl);
-        if (!response.ok) throw new Error('Could not open the saved photo.');
-        image = await response.blob();
-      }
-      if (!image) throw new Error('Could not open this photo.');
-      if (image.type !== 'image/jpeg') {
-        const bitmap = await createImageBitmap(image);
-        try { image = await makeJpeg(bitmap, bitmap.width, bitmap.height); } finally { bitmap.close(); }
-      }
-      const result = await previewTrainedModel(orgId, datasetId, latestModel.id, image, .4, '', false);
-      const boxes = result.detections.filter(box => labels.includes(box.label) && box.x2 > box.x1 && box.y2 > box.y1)
-        .slice(0, 300).map(box => ({ label: box.label, start: { x: box.x1, y: box.y1 }, end: { x: box.x2, y: box.y2 } }));
+      const image = await photoAsJpeg(photo);
+      const result = await previewTrainedModel(orgId, datasetId, newestModel.id, image, SUGGEST_CONFIDENCE, '', false);
+      const boxes = result.detections
+        .filter(box => labels.includes(box.label) && box.x2 > box.x1 && box.y2 > box.y1)
+        .slice(0, MAX_SUGGESTED_BOXES)
+        .map(box => ({ label: box.label, start: { x: box.x1, y: box.y1 }, end: { x: box.x2, y: box.y2 } }));
       if (!boxes.length) {
         setMessage('The model found nothing here. Answer the question above yourself.');
         return;
@@ -194,6 +201,41 @@ export function LabelStep({ project, orgId, datasetId, models }: {
     }
   }
 
+  /* ---------- Keyboard shortcuts ---------- */
+
+  const handlers = useRef({ go, finishPhoto, nothingHere, undo, removeBox, chooseClass, changeZoom, selectedBox, labels, canEdit });
+  handlers.current = { go, finishPhoto, nothingHere, undo, removeBox, chooseClass, changeZoom, selectedBox, labels, canEdit };
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      const target = event.target as HTMLElement;
+      if (target.closest('input, textarea, select, [contenteditable=true], [role=dialog]')) return;
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      const h = handlers.current;
+      const key = event.key.toLowerCase();
+      if (event.key === 'ArrowRight') { event.preventDefault(); h.go(1); return; }
+      if (event.key === 'ArrowLeft') { event.preventDefault(); h.go(-1); return; }
+      if (event.key === '+' || event.key === '=') { h.changeZoom(ZOOM_STEP); return; }
+      if (event.key === '-') { h.changeZoom(-ZOOM_STEP); return; }
+      if (!h.canEdit) return;
+      if (/^[1-9]$/.test(event.key)) {
+        const label = h.labels[Number(event.key) - 1];
+        if (label) h.chooseClass(label);
+        return;
+      }
+      if (event.key === 'Enter' && !target.closest('button, a')) { event.preventDefault(); h.finishPhoto(); return; }
+      if (key === 'e') { h.nothingHere(); return; }
+      if (key === 'z' && !event.shiftKey) { event.preventDefault(); h.undo(); return; }
+      if ((event.key === 'Delete' || event.key === 'Backspace') && h.selectedBox !== null) {
+        event.preventDefault();
+        h.removeBox(h.selectedBox);
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  /* ---------- Render ---------- */
+
   if (!photos.length) return <main className="page narrow">
     <div className="empty">
       <span className="bubble"><Icon name="image" /></span>
@@ -208,13 +250,13 @@ export function LabelStep({ project, orgId, datasetId, models }: {
     {labels.map((label, position) => {
       const info = project.classInfo[label];
       return <button key={label} type="button" className="guide-choice" onClick={() => chooseClass(label)}>
-        <span className="swatch" style={{ background: colorFor(labels, label), width: 18, height: 18 }} />
+        <span className="swatch big" style={{ background: colorFor(labels, label) }} />
         <span className="spacer">
           <strong>{prefix}{label}</strong>
           {info?.hint && <small>{info.hint}</small>}
         </span>
         <KindBadge kind={project.kindOf(label)} />
-        {position < 9 && <kbd>{position + 1}</kbd>}
+        {position < 9 && <kbd title={`Press ${position + 1}`}>{position + 1}</kbd>}
       </button>;
     })}
   </div>;
@@ -222,16 +264,16 @@ export function LabelStep({ project, orgId, datasetId, models }: {
   return <main className="page wide" style={{ gap: '1.25rem' }}>
     <header className="page-head">
       <div>
-        <span className="eyebrow">Step 2 of 5</span>
-        <h1 style={{ marginTop: '.3rem' }}>Label your photos</h1>
-        <p>Answer the question for each photo. The model learns from the boxes you draw.</p>
+        <span className="eyebrow"><Icon name="box" /> Step 3 of 6</span>
+        <h1 style={{ marginTop: '.3rem' }}>Mark the photos</h1>
+        <p>One photo at a time. Box every thing you see.</p>
       </div>
       <a className={`btn${project.blockedReason ? ' ghost' : ''}`} href={projectHref(orgId, datasetId, 'train')}>
         {project.blockedReason ? 'Go to training' : 'Next: Train model'} <Icon name="arrow" />
       </a>
     </header>
 
-    <HowItWorks project={project} />
+    <LabelHelp />
 
     <div className="labeler">
       <nav className="filmstrip" aria-label="Photos">
@@ -244,10 +286,12 @@ export function LabelStep({ project, orgId, datasetId, models }: {
         </div>
         {filtered.map(item => <button key={item.id} type="button" className={`film${item.reviewed ? ' done' : ''}`}
           aria-current={item.id === photo?.id} onClick={() => setActiveId(item.id)}>
-          <span className="mini"><PhotoImage photo={item} /></span>
+          <span className="mini"><PhotoImage photo={item} />
+            {item.reviewed && <span className="mini-badge"><Icon name="check" /></span>}</span>
           <span style={{ minWidth: 0 }}>
-            <span title={item.filename}>Photo {photos.indexOf(item) + 1}</span>
-            <small>{item.reviewed ? <><Icon name="check" />{summary(item.boxes)}</> : <span className="todo-dot">To do</span>}</small>
+            <span title={item.filename}>Photo {(positions.get(item.id) ?? 0) + 1}</span>
+            <small>{item.reviewed ? <>{item.boxes.length ? <Icon name="box" /> : <Icon name="close" />}{summary(item.boxes)}</>
+              : <span className="todo-dot">To do</span>}</small>
           </span>
         </button>)}
         {!filtered.length && <p className="muted small" style={{ padding: '.5rem' }}>No photos here.</p>}
@@ -257,18 +301,16 @@ export function LabelStep({ project, orgId, datasetId, models }: {
         {canEdit && <section className={`card guide stage-${stage}`} aria-live="polite" aria-label="What to do with this photo">
           <div className="guide-head">
             <span className="guide-num">Photo {index + 1} of {photos.length}</span>
-            {stage !== 'done' && <span className="guide-steps" aria-hidden="true">
-              <i className={stage === 'ask' ? 'on' : 'past'} /><i className={stage === 'draw' ? 'on' : stage === 'more' ? 'past' : ''} /><i className={stage === 'more' ? 'on' : ''} />
-            </span>}
+            {stage !== 'done' && labels.length > 0 && <GuideSteps stage={stage} />}
           </div>
 
           {labels.length === 0 ? <>
-            <h2>First, tell us what to look for</h2>
-            <p>Add a label for each kind of thing you want the model to find. Then draw a box around each one in your photos.</p>
-            <div className="row"><button type="button" className="btn" onClick={() => setEditingClasses(true)}><Icon name="plus" /> Add labels</button></div>
+            <h2><Icon name="target" /> First, say what to find</h2>
+            <p>Name the things, and say if each one is good or bad.</p>
+            <div className="row"><a className="btn" href={projectHref(orgId, datasetId, 'detect')}><Icon name="tag" /> What to find <Icon name="arrow" /></a></div>
           </> : stage === 'ask' ? <>
             <h2>What do you see in this photo?</h2>
-            <p>Look at the photo below and click what matches. If there are several, start with one; you can add the others next.</p>
+            <p>Look at the photo below and click what matches. If there are several, start with one; you add the others next.</p>
             {classButtons()}
             <button type="button" className="guide-none" onClick={nothingHere}>
               <Icon name="close" /><span className="spacer"><strong>None of these: nothing to label</strong>
@@ -276,10 +318,10 @@ export function LabelStep({ project, orgId, datasetId, models }: {
             </button>
           </> : stage === 'draw' ? <>
             <h2>Draw a box around the <span className="hl" style={{ background: colorFor(labels, activeClass) }}>{activeClass}</span></h2>
-            <ol className="how-draw">
-              <li>Point the mouse at the <b>top-left corner</b> of the {activeClass}.</li>
-              <li><b>Hold</b> the left mouse button and <b>drag</b> to the bottom-right corner.</li>
-              <li><b>Let go.</b> Keep the box tight, but include the whole thing.</li>
+            <ol className="how-draw visual">
+              <li><span className="how-ico"><Icon name="target" /></span>Point at the <b>top-left corner</b> of the {activeClass}.</li>
+              <li><span className="how-ico"><Icon name="arrow" /></span><b>Hold</b> the mouse button and <b>drag</b> to the bottom-right corner.</li>
+              <li><span className="how-ico"><Icon name="check" /></span><b>Let go.</b> Keep the box tight, but include the whole thing.</li>
             </ol>
             <div className="row">
               <button type="button" className="btn ghost small" onClick={() => setStage(photo.boxes.length ? 'more' : 'ask')}><Icon name="back" /> Back</button>
@@ -291,7 +333,7 @@ export function LabelStep({ project, orgId, datasetId, models }: {
             <p>Is there <b>another</b> thing to label in this photo? Every one should get its own box.</p>
             {classButtons('Yes, another ')}
             <button type="button" className="btn large block" onClick={finishPhoto}>
-              No, this photo is done. Next photo <Icon name="arrow" />
+              No, this photo is done. Next photo <Icon name="arrow" /> <kbd className="on-dark">↵</kbd>
             </button>
           </> : <>
             <h2><Icon name="check" /> {allDone ? 'All photos are labeled!' : 'This photo is done'}</h2>
@@ -309,29 +351,25 @@ export function LabelStep({ project, orgId, datasetId, models }: {
         <section className="card canvas-card" aria-label="Photo">
           <div className="canvas-tools">
             <button type="button" className="icon-btn" aria-label="Previous photo" title="Previous (←)" onClick={() => go(-1)}><Icon name="back" /></button>
-            <strong className="small" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={photo.filename}>
-              {photo.filename}
+            <strong className="small canvas-name" title={photo.filename}>
+              <Icon name="image" /> {photo.filename}
             </strong>
-            <button type="button" className="icon-btn" aria-label="Zoom out" disabled={zoom <= 100} onClick={() => setZoom(value => Math.max(100, value - 25))}><Icon name="zoomOut" /></button>
+            <button type="button" className="icon-btn" aria-label="Zoom out" title="Zoom out (−)" disabled={zoom <= ZOOM_MIN} onClick={() => changeZoom(-ZOOM_STEP)}><Icon name="zoomOut" /></button>
             <output aria-live="polite">{zoom}%</output>
-            <button type="button" className="icon-btn" aria-label="Zoom in" disabled={zoom >= 300} onClick={() => setZoom(value => Math.min(300, value + 25))}><Icon name="zoomIn" /></button>
+            <button type="button" className="icon-btn" aria-label="Zoom in" title="Zoom in (+)" disabled={zoom >= ZOOM_MAX} onClick={() => changeZoom(ZOOM_STEP)}><Icon name="zoomIn" /></button>
             <button type="button" className="icon-btn" aria-label="Next photo" title="Next (→)" onClick={() => go(1)}><Icon name="arrow" /></button>
           </div>
-          <Canvas key={photo.id} photo={photo} labels={labels} zoom={zoom} awaiting={canEdit && stage === 'draw'}
+          <LabelCanvas key={photo.id} photo={photo} labels={labels} zoom={zoom} awaiting={canEdit && stage === 'draw'}
             canDraw={canEdit && !!activeClass && stage !== 'done'} activeClass={activeClass}
             selected={selectedBox} onSelect={setSelectedBox} onAdd={addBox} />
           {canEdit && <div className="row">
             <button type="button" className="btn ghost small" disabled={!photo.boxes.length} onClick={undo}><Icon name="undo" /> Undo last box</button>
-            {models.length > 0 && stage !== 'done' && <button type="button" className="btn ghost small" disabled={suggesting} onClick={() => void suggest()}>
+            {newestModel && stage !== 'done' && <button type="button" className="btn ghost small" disabled={suggesting} onClick={() => void suggest()}
+              title="Your latest trained model draws boxes; you check them">
               <Icon name="sparkle" /> {suggesting ? 'Finding…' : 'Let the model suggest boxes'}
             </button>}
             <span className="spacer" />
-            <button type="button" className="btn ghost small" onClick={() => {
-              if (!window.confirm('Remove this photo from the project?')) return;
-              const id = photo.id;
-              go(1);
-              project.setPhotos(current => current.filter(item => item.id !== id));
-            }}><Icon name="trash" /> Remove photo</button>
+            <button type="button" className="btn ghost small" onClick={removePhoto}><Icon name="trash" /> Remove photo</button>
           </div>}
         </section>
       </section>}
@@ -339,36 +377,43 @@ export function LabelStep({ project, orgId, datasetId, models }: {
       <aside className="panel-stack">
         <section className="card side-card" aria-labelledby="progress-h">
           <div className="progress-line">
-            <div id="progress-h"><span>{project.reviewed} of {photos.length} photos done</span><span>{percentDone}%</span></div>
+            <div id="progress-h"><span><Icon name="check" /> {project.reviewed} of {photos.length} photos done</span><span>{percentDone}%</span></div>
             <div className="bar"><span style={{ width: `${percentDone}%` }} /></div>
           </div>
         </section>
 
         <section className="card side-card" aria-labelledby="classes-h">
-          <h3 id="classes-h">What the model learns
+          <h3 id="classes-h"><span><Icon name="tag" /> What the model learns</span>
             {canEdit && <button type="button" className="btn link small" onClick={() => setEditingClasses(true)}>Edit</button>}</h3>
           <ul className="class-summary">
-            {labels.map(label => {
+            {labels.map((label, position) => {
               const count = project.labelCounts[label] ?? 0;
+              const fill = Math.min(100, Math.round(100 * count / GOOD_PHOTOS_PER_CLASS));
               return <li key={label}>
                 <span className="swatch" style={{ background: colorFor(labels, label) }} />
-                <span className="spacer"><b>{label}</b> <KindBadge kind={project.kindOf(label)} />
-                  {project.classInfo[label]?.hint && <small>{project.classInfo[label].hint}</small>}</span>
-                <span className={`count-pill${count >= 10 ? ' ok' : ''}`} title="Photos with this class">{count}</span>
+                <span className="spacer">
+                  <b>{label}</b> <KindBadge kind={project.kindOf(label)} />
+                  {project.classInfo[label]?.hint && <small>{project.classInfo[label].hint}</small>}
+                  <span className="mini-bar" title={`${count} of ${GOOD_PHOTOS_PER_CLASS} recommended photos`}>
+                    <span style={{ width: `${fill}%`, background: colorFor(labels, label) }} />
+                  </span>
+                </span>
+                {position < 9 && <kbd>{position + 1}</kbd>}
+                <span className={`count-pill${count >= GOOD_PHOTOS_PER_CLASS ? ' ok' : ''}`} title="Photos with this class">{count}</span>
               </li>;
             })}
           </ul>
-          {labels.length > 0 && <p className="small muted">Numbers show how many photos contain each class. Aim for <b>10 or more</b> each, and about the same for each.</p>}
+          {labels.length > 0 && <p className="small muted">Bars fill at <b>{GOOD_PHOTOS_PER_CLASS} photos</b> per class. Aim for about the same number for each.</p>}
           {!project.passFail && labels.length > 0 && canEdit && <div className="tip-box small">
             <Icon name="info" /><span>Want PASS / FAIL results? Click <b>Edit</b> and mark classes as <b>Good</b> or <b>Defect</b>.</span>
           </div>}
         </section>
 
         {photo && photo.boxes.length > 0 && <section className="card side-card" aria-labelledby="boxes-h">
-          <h3 id="boxes-h">Boxes in this photo <span className="chip plain">{photo.boxes.length}</span></h3>
+          <h3 id="boxes-h"><span><Icon name="box" /> Boxes in this photo</span> <span className="chip plain">{photo.boxes.length}</span></h3>
           <ul className="box-list">
             {photo.boxes.map((box, position) => <li key={position} className={selectedBox === position ? 'selected' : ''}>
-              <span className="swatch" style={{ background: colorFor(labels, box.label ?? '') }} />
+              <span className="box-n" style={{ background: colorFor(labels, box.label ?? '') }}>{position + 1}</span>
               <select aria-label={`Class of box ${position + 1}`} value={box.label ?? ''} disabled={!canEdit}
                 onFocus={() => setSelectedBox(position)} onChange={event => { relabel(position, event.target.value); event.target.blur(); }}>
                 {labels.map(label => <option key={label}>{label}</option>)}
@@ -377,11 +422,11 @@ export function LabelStep({ project, orgId, datasetId, models }: {
                 onClick={() => removeBox(position)}><Icon name="trash" /></button>}
             </li>)}
           </ul>
-          <p className="small muted">Wrong box? Delete it here, or change its class.</p>
+          <p className="small muted">Wrong box? Delete it here, or change its class. Numbers match the boxes on the photo.</p>
         </section>}
 
         <details className="card side-card">
-          <summary style={{ cursor: 'pointer', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '.5rem' }}><Icon name="keyboard" /> Keyboard shortcuts</summary>
+          <summary className="side-summary"><Icon name="keyboard" /> Keyboard shortcuts</summary>
           <div className="shortcuts">
             <kbd>1–9</kbd><span>Choose a class</span>
             <kbd>↵</kbd><span>Photo done, next</span>
@@ -389,6 +434,7 @@ export function LabelStep({ project, orgId, datasetId, models }: {
             <kbd>Z</kbd><span>Undo last box</span>
             <kbd>Del</kbd><span>Delete selected box</span>
             <kbd>← →</kbd><span>Previous / next photo</span>
+            <kbd>+ −</kbd><span>Zoom in / out</span>
           </div>
         </details>
       </aside>
@@ -402,174 +448,53 @@ export function LabelStep({ project, orgId, datasetId, models }: {
   </main>;
 }
 
-function HowItWorks({ project }: { project: Project }) {
+/** Named progress through one photo: what is in it → draw → anything else. */
+function GuideSteps({ stage }: { stage: Stage }) {
+  const current = GUIDE_STEPS.findIndex(step => step.stage === stage);
+  return <ol className="guide-steps" aria-label="Steps for this photo">
+    {GUIDE_STEPS.map((step, position) => {
+      const state = position === current ? 'on' : position < current ? 'past' : '';
+      return <li key={step.stage} className={state} aria-current={state === 'on' ? 'step' : undefined}>
+        <span className="gs-dot">{state === 'past' ? <Icon name="check" /> : <Icon name={step.icon} />}</span>
+        <span className="gs-label">{step.label}</span>
+      </li>;
+    })}
+  </ol>;
+}
+
+type HelpTab = 'rules' | 'boxes' | 'ways';
+const HELP_KEY = 'vision-studio.label-help';
+
+/** Collapsible teaching panel with three tabs. Open/closed is remembered per browser. */
+function LabelHelp() {
   const [open, setOpen] = useState(() => {
-    try { return localStorage.getItem('vision-studio.label-help') !== 'closed'; } catch { return true; }
+    try { return localStorage.getItem(HELP_KEY) !== 'closed'; } catch { return true; }
   });
+  const [tab, setTab] = useState<HelpTab>('rules');
   function toggle(value: boolean) {
     setOpen(value);
-    try { localStorage.setItem('vision-studio.label-help', value ? 'open' : 'closed'); } catch { /* optional */ }
+    try { localStorage.setItem(HELP_KEY, value ? 'open' : 'closed'); } catch { /* optional */ }
   }
-  if (!open) return <button type="button" className="btn link small" style={{ justifySelf: 'start' }} onClick={() => toggle(true)}>
-    <Icon name="info" /> How labeling works
+  if (!open) return <button type="button" className="btn ghost small" style={{ justifySelf: 'start' }} onClick={() => toggle(true)}>
+    <Icon name="help" /> How to teach the model
   </button>;
-  const good = project.labels.filter(label => project.kindOf(label) === 'good');
-  const bad = project.labels.filter(label => project.kindOf(label) === 'defect');
   return <section className="card explain">
-    <div className="row"><h2 className="spacer">How labeling works</h2>
-      <button type="button" className="icon-btn" aria-label="Hide help" onClick={() => toggle(false)}><Icon name="close" /></button></div>
-    <div className="explain-grid">
-      <div><span className="n">1</span><b>The model copies you.</b> It learns only from the boxes you draw. It does not know what “good” or “bad” means until you show it.</div>
-      <div><span className="n">2</span><b>One box per thing.</b> Draw a box around each thing and pick what it is
-        {good.length > 0 && bad.length > 0 ? <>: <b>{good.join(', ')}</b> for good ones, <b>{bad.join(', ')}</b> for bad ones.</> : '.'}</div>
-      <div><span className="n">3</span><b>Empty photos matter.</b> If a photo has nothing to label, say so. That teaches the model what to ignore.</div>
-      <div><span className="n">4</span><b>Show both sides.</b> Give it about the same number of examples of each class: 10 or more each is a good start.</div>
-    </div>
-  </section>;
-}
-
-type Row = { original?: string; name: string; kind: ClassKind; hint: string };
-
-function ClassesModal({ project, onClose }: { project: Project; onClose: () => void }) {
-  const [rows, setRows] = useState<Row[]>(() => project.labels.length
-    ? project.labels.map(label => ({
-      original: label, name: label, kind: project.kindOf(label), hint: project.classInfo[label]?.hint ?? '',
-    }))
-    : [{ name: '', kind: 'object', hint: '' }]);
-  const [error, setError] = useState('');
-
-  function update(position: number, change: Partial<Row>) {
-    setRows(current => current.map((row, item) => item === position ? { ...row, ...change } : row));
-  }
-
-  function save() {
-    const names = rows.map(row => row.name.trim());
-    if (names.some(name => !name)) return setError('Give every class a name.');
-    if (new Set(names.map(name => name.toLowerCase())).size !== names.length) return setError('Each class needs a different name.');
-    for (const label of project.labels) {
-      if (!rows.some(row => row.original === label)) project.removeClass(label);
-    }
-    for (const row of rows) {
-      const name = row.name.trim();
-      if (row.original && row.original !== name) project.renameClass(row.original, name);
-      if (!row.original) project.addClass(name);
-      project.setClassInfo(name, { kind: row.kind, hint: row.hint.trim().slice(0, 120) });
-    }
-    onClose();
-  }
-
-  return <Modal title="What should the model learn?" wide onClose={onClose}
-    description="Each class is one kind of thing you will draw boxes around. Mark good and defective versions to get PASS / FAIL results."
-    footer={<>
-      <button type="button" className="btn ghost" onClick={onClose}>Cancel</button>
-      <button type="button" className="btn" onClick={save}><Icon name="check" /> Save classes</button>
-    </>}>
-    <div className="example-box small">
-      Choose <b>Object</b> for things you want to find. For a pass/fail check, use <b>Good</b> for acceptable items
-      and <b>Defect</b> for problems you want the model to flag.
-    </div>
-    <div className="class-table">
-      <div className="class-table-head"><span>Name</span><span>Type</span><span>How to recognise it (optional)</span><span /></div>
-      {rows.map((row, position) => {
-        const used = row.original ? project.labelCounts[row.original] ?? 0 : 0;
-        return <div className="class-table-row" key={position}>
-          <input className="input" aria-label="Class name" value={row.name} maxLength={80} placeholder="Label name"
-            onChange={event => update(position, { name: event.target.value })} />
-          <div className="seg kind-seg" role="group" aria-label="Class type">
-            {(['good', 'defect', 'object'] as const).map(kind => <button key={kind} type="button" aria-pressed={row.kind === kind}
-              onClick={() => update(position, { kind })}>{KIND_LABEL[kind]}</button>)}
-          </div>
-          <input className="input" aria-label="Hint" value={row.hint} maxLength={120} placeholder="What to look for"
-            onChange={event => update(position, { hint: event.target.value })} />
-          <button type="button" className="icon-btn" aria-label={`Remove ${row.name || 'class'}`}
-            title={used ? `Used in ${used} photos: removing it deletes those boxes` : 'Remove'}
-            onClick={() => {
-              if (used && !window.confirm(`“${row.original}” is used in ${used} photos. Remove it and delete those boxes?`)) return;
-              setRows(current => current.filter((_, item) => item !== position));
-            }}><Icon name="trash" /></button>
-        </div>;
-      })}
-    </div>
     <div className="row">
-      <button type="button" className="btn ghost small" onClick={() => setRows(current => [...current, { name: '', kind: 'object', hint: '' }])}>
-        <Icon name="plus" /> Add a class</button>
-      {rows.length === 0 && <button type="button" className="btn ghost small" onClick={() => setRows([
-        { name: 'Good', kind: 'good', hint: 'Looks right' }, { name: 'Defect', kind: 'defect', hint: 'Something is wrong' },
-      ])}>Use Good + Defect</button>}
-    </div>
-    <dl className="kind-help small">
-      <div><dt><span className="kind good"><Icon name="check" />Good</span></dt><dd>Seeing it means PASS.</dd></div>
-      <div><dt><span className="kind defect"><Icon name="alert" />Defect</span></dt><dd>Seeing even one means FAIL.</dd></div>
-      <div><dt><span className="kind-plain">Object</span></dt><dd>Just found and counted.</dd></div>
-    </dl>
-    {error && <div className="alert" role="alert"><Icon name="alert" />{error}</div>}
-  </Modal>;
-}
-
-function Canvas({ photo, labels, zoom, canDraw, awaiting, activeClass, selected, onSelect, onAdd }: {
-  photo: Photo;
-  labels: string[];
-  zoom: number;
-  canDraw: boolean;
-  awaiting: boolean;
-  activeClass: string;
-  selected: number | null;
-  onSelect: (index: number | null) => void;
-  onAdd: (box: Box) => void;
-}) {
-  const [draft, setDraft] = useState<Box | null>(null);
-  const area = useRef<HTMLDivElement>(null);
-
-  function point(event: ReactPointerEvent): Point {
-    const rect = area.current!.getBoundingClientRect();
-    return { x: clamp((event.clientX - rect.left) / rect.width), y: clamp((event.clientY - rect.top) / rect.height) };
-  }
-
-  const shown = draft ? [...photo.boxes, draft] : photo.boxes;
-
-  return <div className={`canvas-viewport${awaiting ? ' awaiting' : ''}`}>
-    {awaiting && !draft && <div className="canvas-hint" aria-hidden="true">Drag on the photo to draw a box around the {activeClass}</div>}
-    <div className={`canvas-zoom${zoom === 100 ? ' fit' : ''}`} style={zoom === 100 ? undefined : { width: `${zoom}%` }}>
-      <div ref={area} className={`canvas-photo${canDraw ? '' : ' locked'}`}
-        onPointerDown={event => {
-          if (!canDraw || event.button !== 0 || !event.isPrimary) return;
-          event.currentTarget.setPointerCapture(event.pointerId);
-          const start = point(event);
-          onSelect(null);
-          setDraft({ start, end: start, label: activeClass });
-        }}
-        onPointerMove={event => {
-          if (!draft || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
-          const end = point(event);
-          setDraft(box => box && { ...box, end });
-        }}
-        onPointerUp={event => {
-          if (!draft) return;
-          const end = point(event);
-          const rect = area.current!.getBoundingClientRect();
-          if (Math.abs(draft.start.x - end.x) * rect.width >= 4 && Math.abs(draft.start.y - end.y) * rect.height >= 4) {
-            onAdd({ ...draft, end });
-          }
-          setDraft(null);
-        }}
-        onLostPointerCapture={() => setDraft(null)}>
-        <PhotoImage photo={photo} alt={photo.filename} />
-        {shown.map((box, index) => {
-          const isDraft = draft && index === shown.length - 1;
-          const top = Math.min(box.start.y, box.end.y);
-          return <div key={index} className={`lbox${isDraft ? ' draft' : ''}${selected === index ? ' selected' : ''}${top < .06 ? ' flip' : ''}`}
-            style={{
-              left: `${Math.min(box.start.x, box.end.x) * 100}%`, top: `${top * 100}%`,
-              width: `${Math.abs(box.start.x - box.end.x) * 100}%`, height: `${Math.abs(box.start.y - box.end.y) * 100}%`,
-              borderColor: colorFor(labels, box.label ?? ''),
-            }}>
-            {!isDraft && <button type="button" className="lbl" style={{ background: colorFor(labels, box.label ?? '') }}
-              onPointerDown={event => event.stopPropagation()}
-              onClick={() => onSelect(selected === index ? null : index)}
-              aria-label={`Select box ${index + 1}: ${box.label}`}>{box.label}</button>}
-          </div>;
-        })}
+      <h2 className="spacer"><Icon name="help" /> How to teach the model</h2>
+      <div className="seg" role="tablist" aria-label="Help topics">
+        {([['rules', 'The 4 rules'], ['boxes', 'Good vs bad boxes'], ['ways', 'Ways to teach']] as const).map(([value, text]) =>
+          <button key={value} type="button" role="tab" aria-selected={tab === value} aria-pressed={tab === value}
+            onClick={() => setTab(value)}>{text}</button>)}
       </div>
+      <button type="button" className="icon-btn" aria-label="Hide help" onClick={() => toggle(false)}><Icon name="close" /></button>
     </div>
-  </div>;
+    {tab === 'rules' && <div className="explain-grid">
+      <div><span className="n">1</span><b>The model copies you.</b> It learns only from the boxes you draw. It does not know what “good” or “bad” means until you show it.</div>
+      <div><span className="n">2</span><b>One box per thing.</b> Draw a box around each thing and pick what it is. Two caps means two boxes.</div>
+      <div><span className="n">3</span><b>Empty photos matter.</b> If a photo has nothing to label, say so. That teaches the model what to ignore.</div>
+      <div><span className="n">4</span><b>Show both sides.</b> About the same number of examples of each class: {GOOD_PHOTOS_PER_CLASS} or more each is a good start.</div>
+    </div>}
+    {tab === 'boxes' && <BoxExamples />}
+    {tab === 'ways' && <WaysToTeach />}
+  </section>;
 }

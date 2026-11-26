@@ -14,14 +14,15 @@ type Status = { label: string; step: Step; tone: 'plain' | 'live' | 'dark' | 'so
 
 function projectStatus(project: ProjectSummary): Status {
   if (project.latest_status === 'queued' || project.latest_status === 'running') return { label: 'Training now', step: 'train', tone: 'live' };
-  if (!project.photo_count) return { label: 'Add photos', step: 'upload', tone: 'plain' };
-  if (project.labeled_count < project.photo_count || project.labeled_count < 4) return { label: 'Labeling', step: 'label', tone: 'soft' };
+  if (!project.classes.length) return { label: 'Name what to find', step: 'detect', tone: 'plain' };
+  if (!project.photo_count) return { label: 'Add photos', step: 'upload', tone: 'soft' };
+  if (project.labeled_count < project.photo_count || project.labeled_count < 4) return { label: 'Marking', step: 'label', tone: 'soft' };
   if (!project.model_count) return { label: 'Ready to train', step: 'train', tone: 'soft' };
   return { label: 'Model ready', step: 'test', tone: 'dark' };
 }
 
 const NEXT: Record<Step, string> = {
-  upload: 'Upload photos', label: 'Continue labeling', train: 'Train model', test: 'Test model', use: 'Use model',
+  upload: 'Add photos', detect: 'Say what to find', label: 'Mark photos', train: 'Train model', test: 'Test model', use: 'Use model',
 };
 
 export function Dashboard() {
@@ -169,7 +170,7 @@ function ProjectCard({ orgId, project, onDelete }: { orgId: string; project: Pro
   </div>;
 }
 
-function CreateProject({ orgId, onClose }: { orgId: string; onClose: () => void }) {
+export function CreateProject({ orgId, onClose }: { orgId: string; onClose: () => void }) {
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -184,7 +185,7 @@ function CreateProject({ orgId, onClose }: { orgId: string; onClose: () => void 
       await saveTrainingDataset(orgId, {
         id, revision: 0, part_name: name.trim(), classes: [], class_info: {}, inspection_note: '', photos: [],
       });
-      window.location.hash = projectHref(orgId, id, 'upload');
+      window.location.hash = projectHref(orgId, id, 'detect');
     } catch (cause) {
       setError(errorText(cause, 'Could not start the training project.'));
       setBusy(false);
@@ -196,7 +197,7 @@ function CreateProject({ orgId, onClose }: { orgId: string; onClose: () => void 
     footer={<>
       <button type="button" className="btn ghost" onClick={onClose} disabled={busy}>Cancel</button>
       <button type="submit" form="start-training-project" className="btn" disabled={busy || !name.trim()}>
-        {busy ? 'Opening project…' : <>Continue to upload <Icon name="arrow" /></>}
+        {busy ? 'Opening project…' : <>Continue to set up <Icon name="arrow" /></>}
       </button>
     </>}>
     <form id="start-training-project" className="stack" onSubmit={create}>
