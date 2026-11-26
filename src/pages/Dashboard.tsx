@@ -169,7 +169,7 @@ function ProjectCard({ orgId, project, onDelete }: { orgId: string; project: Pro
   </div>;
 }
 
-function CreateProject({ orgId, onClose }: { orgId: string; onClose: () => void }) {
+export function CreateProject({ orgId, onClose }: { orgId: string; onClose: () => void }) {
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');

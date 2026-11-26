@@ -4,7 +4,7 @@ import { checkpointUrl, type TrainingJob } from '../../services/api/trainingData
 import { Icon } from '../../ui/Icon';
 import { Loading, projectHref, useToast } from '../../ui/common';
 import { ScoreTable, VersionList, versionName } from '../ModelTester';
-import type { Project } from '../ProjectStudio';
+import type { Project } from '../project/useProject';
 import { NoModelYet } from './TestStep';
 
 export function UseStep({ project, orgId, datasetId, models }: {
