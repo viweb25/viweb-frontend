@@ -25,6 +25,7 @@ export type InspectionProgram = {
   review_margin: number;
   revision: number;
   updated_at: string | null;
+  published_revision: number | null;
   zones: Zone[];
   classes: string[];
   defect_classes: string[];
@@ -40,6 +41,8 @@ export type ProgramSummary = {
   run_count: number;
   pass_count: number;
   pending_reviews: number;
+  published_revision: number | null;
+  published_name: string | null;
   last_run_at: string | null;
   updated_at: string;
 };
@@ -72,11 +75,24 @@ export type InspectionRun = {
   review_note: string;
   reviewed_at: string | null;
   sent_to_dataset_at: string | null;
+  dataset_archived?: boolean;
+  program_snapshot?: {
+    revision: number;
+    classes: string[];
+    zones: (Omit<Zone, 'x1' | 'y1' | 'x2' | 'y2'> & {
+      region: Pick<Zone, 'x1' | 'y1' | 'x2' | 'y2'>;
+    })[];
+  } | null;
 };
 
 export type GoldenLayout = { expected: Record<string, Record<string, number>>; detections: Detection[]; outside: number };
 
-export type RunFilters = { programId?: string; decision?: Decision; reviewStatus?: ReviewStatus; limit?: number };
+export type RunCursor = { at: string; id: string };
+export type RunFilters = {
+  programId?: string; decision?: Decision; reviewStatus?: ReviewStatus;
+  fromAt?: string; untilAt?: string; limit?: number; before?: RunCursor;
+};
+export type ResultProgram = { id: string; name: string };
 
 const programs = (orgId: string) => `/api/v1/organisations/${orgId}/inspection-programs`;
 const runs = (orgId: string) => `/api/v1/organisations/${orgId}/inspection-runs`;
@@ -113,19 +129,55 @@ export function captureGolden(orgId: string, programId: string, image: Blob) {
   return request<GoldenLayout>(`${programs(orgId)}/${programId}/golden`, jpeg(image));
 }
 
+export function listProgramVersions(orgId: string, programId: string, signal?: AbortSignal) {
+  return get<number[]>(`${programs(orgId)}/${programId}/versions`, signal);
+}
+
+export async function activateProgram(
+  orgId: string, programId: string, revision: number, action: 'publish' | 'rollback',
+) {
+  const response = await fetch(`${programs(orgId)}/${programId}/${action}?revision=${revision}`, { method: 'POST' });
+  if (!response.ok) throw await readApiError(response);
+}
+
+export function testProgramDraft(orgId: string, programId: string, revision: number, image: Blob) {
+  return request<InspectionRun>(`${programs(orgId)}/${programId}/test?revision=${revision}`, jpeg(image));
+}
+
 /** Inspect one board photo. The result is logged. */
-export function inspectBoard(orgId: string, programId: string, image: Blob) {
-  return request<InspectionRun>(`${programs(orgId)}/${programId}/runs`, jpeg(image));
+export function inspectBoard(orgId: string, programId: string, image: Blob, revision?: number) {
+  const query = revision === undefined ? '' : `?revision=${revision}`;
+  return request<InspectionRun>(`${programs(orgId)}/${programId}/runs${query}`, jpeg(image));
 }
 
 /* ---------- Results ---------- */
 
-export function listRuns(orgId: string, filters: RunFilters = {}, signal?: AbortSignal) {
-  const query = new URLSearchParams({ limit: String(filters.limit ?? 50) });
+function resultQuery(filters: RunFilters) {
+  const query = new URLSearchParams();
   if (filters.programId) query.set('program_id', filters.programId);
   if (filters.decision) query.set('decision', filters.decision);
   if (filters.reviewStatus) query.set('review_status', filters.reviewStatus);
+  if (filters.fromAt) query.set('from_at', filters.fromAt);
+  if (filters.untilAt) query.set('until_at', filters.untilAt);
+  return query;
+}
+
+export function listRuns(orgId: string, filters: RunFilters = {}, signal?: AbortSignal) {
+  const query = resultQuery(filters);
+  if (filters.limit) query.set('limit', String(filters.limit));
+  if (filters.before) {
+    query.set('before_at', filters.before.at);
+    query.set('before_id', filters.before.id);
+  }
   return get<InspectionRun[]>(`${runs(orgId)}?${query}`, signal);
+}
+
+export function listResultPrograms(orgId: string, signal?: AbortSignal) {
+  return get<ResultProgram[]>(`${runs(orgId)}/programs`, signal);
+}
+
+export function resultsCsvUrl(orgId: string, filters: RunFilters) {
+  return `${runs(orgId)}/export.csv?${resultQuery(filters)}`;
 }
 
 export function openRun(orgId: string, runId: string, signal?: AbortSignal) {

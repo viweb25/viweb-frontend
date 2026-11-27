@@ -1,10 +1,11 @@
+import { navigate } from '../ui/navigation';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 
-import { useSession } from '../context/SessionContext';
 import { useWorkspace } from '../context/WorkspaceContext';
 import {
   deleteTrainingDataset, listTrainingDatasets, saveTrainingDataset, type ProjectSummary,
 } from '../services/api/trainingDatasets';
+import { LABEL_EXAMPLE } from '../ui/inspectionExample';
 import { Icon } from '../ui/Icon';
 import {
   ErrorBox, Modal, classColor, errorText, projectHref, timeAgo, useToast, type Step,
@@ -26,7 +27,6 @@ const NEXT: Record<Step, string> = {
 };
 
 export function Dashboard() {
-  const { user } = useSession();
   const { org, canEdit } = useWorkspace();
   const orgId = org!.org_id;
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
@@ -35,6 +35,8 @@ export function Dashboard() {
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<ProjectSummary | null>(null);
   const [query, setQuery] = useState('');
+  const [sort, setSort] = useState<'recent' | 'name' | 'labels'>('recent');
+  const [layout, setLayout] = useState<'cards' | 'list'>('cards');
   const [filter, setFilter] = useState<'all' | 'progress' | 'ready'>('all');
   const anyTraining = projects?.some(project => projectStatus(project).tone === 'live');
 
@@ -58,7 +60,9 @@ export function Dashboard() {
     if (query && !text.includes(query.toLowerCase())) return false;
     const ready = project.model_count > 0;
     return filter === 'all' || (filter === 'ready' ? ready : !ready);
-  }), [projects, query, filter]);
+  }).sort((left, right) => sort === 'name' ? left.part_name.localeCompare(right.part_name)
+    : sort === 'labels' ? right.labeled_count - left.labeled_count
+    : right.updated_at.localeCompare(left.updated_at)), [projects, query, filter, sort]);
 
   const totals = useMemo(() => ({
     projects: projects?.length ?? 0,
@@ -67,35 +71,33 @@ export function Dashboard() {
     training: projects?.filter(project => projectStatus(project).tone === 'live').length ?? 0,
   }), [projects]);
 
-  const firstName = (user.display_name || '').split(' ')[0];
+  const current = projects?.find(project => project.latest_status === 'queued' || project.latest_status === 'running') ?? projects?.[0];
 
-  return <main className="page">
-    <section className="hero">
-      <div className="hero-main">
-        <div>
-          <span className="eyebrow">{org!.name}</span>
-          <h1 style={{ marginTop: '.4rem' }}>{firstName ? `Welcome back, ${firstName}` : 'Welcome to Vision Studio'}</h1>
-          <p style={{ marginTop: '.6rem' }}>Build a detection model in five steps. Every project walks you through it, and you can pause and come back at any time.</p>
-        </div>
-        <div className="flow" aria-label="How a project works">
-          {([['upload', 'Upload'], ['box', 'Label'], ['cpu', 'Train'], ['inspect', 'Test'], ['rocket', 'Use']] as const).map(([icon, label]) =>
-            <div key={label}><Icon name={icon} />{label}</div>)}
-        </div>
-        {canEdit && <div><button type="button" className="btn dark" onClick={() => setCreating(true)}>
-          <Icon name="plus" /> Train a model
-        </button></div>}
-      </div>
-      <div className="stats">
-        <div className="stat"><strong>{totals.projects}</strong><span><Icon name="grid" /> Projects</span></div>
-        <div className="stat"><strong>{totals.photos}</strong><span><Icon name="image" /> Labeled photos</span></div>
-        <div className="stat"><strong>{totals.models}</strong><span><Icon name="layers" /> Trained models</span></div>
-        <div className="stat"><strong>{totals.training}</strong><span><Icon name="cpu" /> Training now</span></div>
-      </div>
-    </section>
+  return <main className="page workspace-page">
+    <header className="page-head">
+      <div><h1>Projects</h1><p>Prepare photos, train models, and pick up where you left off.</p></div>
+      {canEdit && <button type="button" className="btn dark" onClick={() => setCreating(true)}><Icon name="plus" /> New project</button>}
+    </header>
+
+    {projects && <dl className="project-kpis">
+      <div><Icon name="grid" /><dt>Projects</dt><dd>{totals.projects}</dd></div>
+      <div><Icon name="image" /><dt>Labeled photos</dt><dd>{totals.photos}</dd></div>
+      <div><Icon name="layers" /><dt>Trained models</dt><dd>{totals.models}</dd></div>
+      <div><Icon name="cpu" /><dt>Training now</dt><dd>{totals.training}</dd></div>
+    </dl>}
+
+    {current && <section className="project-resume">
+      <span className="workspace-icon"><Icon name={anyTraining ? 'cpu' : 'layers'} /></span>
+      <div className="spacer"><p className="small muted">{anyTraining ? 'Active training' : 'Last updated project'}</p>
+        <h2>{current.part_name}</h2></div>
+      <a className="btn ghost" href={projectHref(orgId, current.id, projectStatus(current).step)}>
+        {NEXT[projectStatus(current).step]} <Icon name="arrow" />
+      </a>
+    </section>}
 
     <section className="stack">
       <div className="page-head">
-        <div><h2>Your projects</h2><p className="small">Each project learns to find the objects you label.</p></div>
+        <h2>Project library</h2>
         <div className="toolbar">
           <label className="input-icon"><Icon name="zoomIn" /><span className="sr-only">Search projects</span>
             <input className="input" type="search" placeholder="Search projects or classes" value={query}
@@ -103,6 +105,14 @@ export function Dashboard() {
           <div className="seg" role="group" aria-label="Filter projects">
             {([['all', 'All'], ['progress', 'In progress'], ['ready', 'Model ready']] as const).map(([value, label]) =>
               <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}>{label}</button>)}
+          </div>
+          <label className="sr-only" htmlFor="project-sort">Sort projects</label>
+          <select id="project-sort" className="input project-sort" value={sort} onChange={event => setSort(event.target.value as typeof sort)}>
+            <option value="recent">Recently updated</option><option value="name">Name</option><option value="labels">Most labeled photos</option>
+          </select>
+          <div className="seg" role="group" aria-label="Project layout">
+            <button type="button" aria-pressed={layout === 'cards'} onClick={() => setLayout('cards')}>Cards</button>
+            <button type="button" aria-pressed={layout === 'list'} onClick={() => setLayout('list')}>List</button>
           </div>
         </div>
       </div>
@@ -116,10 +126,7 @@ export function Dashboard() {
         {canEdit ? <button type="button" className="btn" onClick={() => setCreating(true)}><Icon name="plus" /> Train a model</button>
           : <p className="muted">You have view-only access in this workspace.</p>}
       </div>}
-      {projects && projects.length > 0 && <div className="projects">
-        {canEdit && filter === 'all' && !query && <button type="button" className="new-project" onClick={() => setCreating(true)}>
-          <span className="bubble"><Icon name="plus" /></span>Train a model
-        </button>}
+      {projects && projects.length > 0 && <div className={`projects project-library ${layout}`}>
         {visible.map(project => <ProjectCard key={project.id} orgId={orgId} project={project}
           onDelete={canEdit ? () => setDeleting(project) : undefined} />)}
         {visible.length === 0 && <p className="muted">No projects match your search.</p>}
@@ -166,7 +173,7 @@ function ProjectCard({ orgId, project, onDelete }: { orgId: string; project: Pro
       </div>
     </a>
     {onDelete && <button type="button" className="icon-btn menu-trigger" style={{ position: 'absolute', top: '.8rem', right: '.8rem' }}
-      aria-label={`Delete ${project.part_name}`} title="Delete project" onClick={onDelete}><Icon name="trash" /></button>}
+      aria-label={`Archive ${project.part_name}`} title="Archive project" onClick={onDelete}><Icon name="trash" /></button>}
   </div>;
 }
 
@@ -185,14 +192,14 @@ export function CreateProject({ orgId, onClose }: { orgId: string; onClose: () =
       await saveTrainingDataset(orgId, {
         id, revision: 0, part_name: name.trim(), classes: [], class_info: {}, inspection_note: '', photos: [],
       });
-      window.location.hash = projectHref(orgId, id, 'detect');
+      navigate(projectHref(orgId, id, 'detect'));
     } catch (cause) {
       setError(errorText(cause, 'Could not start the training project.'));
       setBusy(false);
     }
   }
 
-  return <Modal title="Train a model" onClose={onClose}
+  return <Modal title="New project" onClose={onClose}
     description="Name your project, upload your photos, then mark what the model should learn to find."
     footer={<>
       <button type="button" className="btn ghost" onClick={onClose} disabled={busy}>Cancel</button>
@@ -202,7 +209,7 @@ export function CreateProject({ orgId, onClose }: { orgId: string; onClose: () =
     </>}>
     <form id="start-training-project" className="stack" onSubmit={create}>
       <label className="field">Project name
-        <input maxLength={80} value={name} required disabled={busy}
+        <input maxLength={80} value={name} placeholder={LABEL_EXAMPLE.project} required disabled={busy}
           onChange={event => setName(event.target.value)} />
       </label>
       {error && <ErrorBox message={error} />}
@@ -219,8 +226,8 @@ function DeleteProject({ orgId, project, onClose, onDeleted }: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const toast = useToast();
-  return <Modal title={`Delete “${project.part_name}”?`} onClose={onClose}
-    description="This permanently removes its photos, labels, and trained models. It cannot be undone."
+  return <Modal title={`Archive “${project.part_name}”?`} onClose={onClose}
+    description="This hides the project and its inspection programs from active lists. Photos, labels, models, and inspection history are retained."
     footer={<>
       <button type="button" className="btn ghost" onClick={onClose} disabled={busy}>Keep project</button>
       <button type="button" className="btn dark" disabled={busy} onClick={async () => {
@@ -228,15 +235,15 @@ function DeleteProject({ orgId, project, onClose, onDeleted }: {
         setError('');
         try {
           await deleteTrainingDataset(orgId, project.id);
-          toast('Project deleted');
+          toast('Project archived');
           onDeleted();
         } catch (cause) {
-          setError(errorText(cause, 'Could not delete the project.'));
+          setError(errorText(cause, 'Could not archive the project.'));
           setBusy(false);
         }
-      }}><Icon name="trash" /> {busy ? 'Deleting…' : 'Delete project'}</button>
+      }}><Icon name="trash" /> {busy ? 'Archiving…' : 'Archive project'}</button>
     </>}>
-    <p>{project.photo_count} photos and {project.model_count} trained {project.model_count === 1 ? 'model' : 'models'} will be deleted.</p>
+    <p>{project.photo_count} photos and {project.model_count} trained {project.model_count === 1 ? 'model' : 'models'} will be retained.</p>
     {error && <ErrorBox message={error} />}
   </Modal>;
 }

@@ -35,3 +35,7 @@ Thumbs.db
 .agents/
 .codex/
 .aws/
+
+# Browser smoke-test artifacts
+/test-results/
+/playwright-report/

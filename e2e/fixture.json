@@ -1,0 +1,18 @@
+{
+  "password": "viweb smoke test password",
+  "owner": {
+    "email": "owner@local.example",
+    "workspaceId": "00000000-0000-4000-8000-000000000001",
+    "workspaceName": "Fixture Factory"
+  },
+  "outsider": {
+    "email": "outsider@local.example",
+    "workspaceId": "00000000-0000-4000-8000-000000000002",
+    "workspaceName": "Other Factory"
+  },
+  "program": {
+    "id": "00000000-0000-4000-8000-000000000003",
+    "modelJobId": "00000000-0000-4000-8000-000000000004",
+    "name": "Shipping label inspection"
+  }
+}

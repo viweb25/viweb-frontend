@@ -1,3 +1,4 @@
+import { navigate } from '../../ui/navigation';
 import { useEffect, useState } from 'react';
 
 import { useWorkspace } from '../../context/WorkspaceContext';
@@ -11,6 +12,8 @@ export function ProgramsPage() {
   const orgId = org!.org_id;
   const [programs, setPrograms] = useState<ProgramSummary[] | null>(null);
   const [error, setError] = useState('');
+  const [query, setQuery] = useState('');
+  const [status, setStatus] = useState<'all' | 'live' | 'draft'>('all');
   const [creating, setCreating] = useState(false);
   const [attempt, setAttempt] = useState(0);
 
@@ -23,22 +26,27 @@ export function ProgramsPage() {
     return () => controller.abort();
   }, [orgId, attempt]);
 
-  return <main className="page">
+  const visible = programs?.filter(program =>
+    (status === 'all' || (status === 'live') === Boolean(program.published_revision))
+    && [program.name, program.published_name, program.dataset_name].some(name =>
+      name?.toLowerCase().includes(query.trim().toLowerCase())),
+  );
+  return <main className="page workspace-page">
     <header className="page-head">
       <div>
         <span className="eyebrow"><Icon name="layers" /> Object detection</span>
         <h1 style={{ marginTop: '.3rem' }}>Inspection programs</h1>
-        <p>A program turns a trained model into a pass/fail check: zones on the board, and what must be in each zone.</p>
+        <p>Choose where the model should look and which labels it should find. Publish a program when it is ready to use.</p>
       </div>
       {canEdit && <button type="button" className="btn" onClick={() => setCreating(true)}><Icon name="plus" /> New program</button>}
     </header>
 
     <ol className="flow-steps how-programs" aria-label="How a program works">
-      {([['camera', 'Board photo', 'Same jig, camera and light every time'],
-        ['grid', 'Zones', 'Draw an area for each part of the board'],
-        ['star', 'Golden layout', 'Capture a good board: expected counts per zone'],
-        ['target', 'Model finds parts', 'Bolts, wires, switches per zone'],
-        ['flag', 'Pass / fail', 'Missing, extra or defect = fail']] as const).map(([icon, title, text], index) =>
+      {([['camera', 'Reference photo', 'Use the same camera view'],
+        ['grid', 'Zones', 'Draw an area to check'],
+        ['star', 'Expected layout', 'Show what a good example looks like'],
+        ['target', 'Find labels', 'For example, one straight label'],
+        ['flag', 'Pass / fail', 'Decide whether the photo passes']] as const).map(([icon, title, text], index) =>
         <li key={title}><span className="flow-icon"><Icon name={icon} /></span><span className="flow-num">{index + 1}</span>
           <strong>{title}</strong><small>{text}</small></li>)}
     </ol>
@@ -51,9 +59,26 @@ export function ProgramsPage() {
       <p className="muted">Train a model in a project first. Then create a program to check boards with it.</p>
       {canEdit && <button type="button" className="btn" onClick={() => setCreating(true)}><Icon name="plus" /> New program</button>}
     </div>}
-    {programs && programs.length > 0 && <div className="projects">
-      {programs.map(program => <ProgramCard key={program.id} program={program} />)}
-    </div>}
+    {programs && programs.length > 0 && <>
+      <div className="card workspace-panel">
+        <div className="row">
+          <label className="input-icon"><Icon name="zoomIn" /><span className="sr-only">Search programs</span>
+            <input className="input" type="search" value={query} placeholder="Search programs or projects"
+              onChange={event => setQuery(event.target.value)} />
+          </label>
+          <div className="seg" role="group" aria-label="Program status">
+            {([['all', 'All programs'], ['live', 'Live'], ['draft', 'Draft']] as const).map(([value, label]) =>
+              <button type="button" key={value} aria-pressed={status === value} onClick={() => setStatus(value)}>{label}</button>)}
+          </div>
+          <span className="spacer" /><span className="small muted">{visible?.length} of {programs.length}</span>
+        </div>
+      </div>
+      {visible?.length ? <div className="projects">
+        {visible.map(program => <ProgramCard key={program.id} program={program} />)}
+      </div> : <div className="empty"><h2>No programs match your filters</h2>
+        <button type="button" className="btn ghost" onClick={() => { setQuery(''); setStatus('all'); }}>Clear filters</button>
+      </div>}
+    </>}
 
     {creating && <CreateProgram orgId={orgId} onClose={() => setCreating(false)} />}
   </main>;
@@ -61,8 +86,7 @@ export function ProgramsPage() {
 
 function ProgramCard({ program }: { program: ProgramSummary }) {
   const passRate = program.run_count ? Math.round(100 * program.pass_count / program.run_count) : null;
-  const ready = program.model_job_id && program.zone_count > 0;
-  return <a className="project" href={`#/programs/${program.id}`}>
+  return <a className="project" href={`/programs/${program.id}`}>
     <div className="project-top">
       <span className="project-icon"><Icon name="layers" /></span>
       <div style={{ minWidth: 0 }}>
@@ -76,9 +100,9 @@ function ProgramCard({ program }: { program: ProgramSummary }) {
       <div><dt>Pass rate</dt><dd>{passRate === null ? '—' : `${passRate}%`}</dd></div>
     </dl>
     <div className="project-foot">
-      {!ready ? <span className="chip"><Icon name="alert" /> {program.model_job_id ? 'Add zones' : 'Choose a model'}</span>
+      {!program.published_revision ? <span className="chip"><Icon name="alert" /> Draft</span>
         : program.pending_reviews ? <span className="chip dark"><Icon name="eye" /> {program.pending_reviews} to review</span>
-          : <span className="chip plain"><Icon name="check" /> Ready</span>}
+          : <span className="chip plain"><Icon name="check" /> Live revision {program.published_revision}</span>}
       <span className="muted small">{program.last_run_at ? `Last run ${timeAgo(program.last_run_at)}` : `Edited ${timeAgo(program.updated_at)}`}</span>
     </div>
   </a>;
@@ -110,7 +134,7 @@ function CreateProgram({ orgId, onClose }: { orgId: string; onClose: () => void 
     setError('');
     try {
       const program = await createProgram(orgId, name.trim(), datasetId);
-      window.location.hash = `#/programs/${program.id}`;
+      navigate(`/programs/${program.id}`);
     } catch (cause) {
       setError(errorText(cause, 'Could not create the program.'));
       setBusy(false);
@@ -135,7 +159,7 @@ function CreateProgram({ orgId, onClose }: { orgId: string; onClose: () => void 
         </button>)}</div>
       </div>
       <label className="field">Program name
-        <input maxLength={80} value={name} onChange={event => setName(event.target.value)} placeholder="e.g. Board A top side" />
+        <input maxLength={80} value={name} onChange={event => setName(event.target.value)} placeholder="Box label check" />
         <small>Tip: one program per board side or camera position.</small>
       </label>
     </>}

@@ -8,11 +8,12 @@ import type { ShellPage } from '../../ui/common';
 
 /** Where each object-detection section lives. */
 const SECTION_HREF: Record<string, { href: string; pages: ShellPage[] }> = {
-  guide: { href: '#/guide', pages: ['guide'] },
-  projects: { href: '#/projects', pages: ['projects'] },
-  programs: { href: '#/programs', pages: ['programs', 'program'] },
-  results: { href: '#/results', pages: ['results'] },
-  inspect: { href: '#/inspect', pages: ['inspect'] },
+  guide: { href: '/guide', pages: ['guide'] },
+  projects: { href: '/projects', pages: ['projects'] },
+  programs: { href: '/programs', pages: ['programs', 'program'] },
+  operator: { href: '/operator', pages: ['operator'] },
+  results: { href: '/results', pages: ['results'] },
+  inspect: { href: '/inspect', pages: ['inspect'] },
 };
 
 /** Used until the API answers, and if it cannot be reached. */
@@ -22,6 +23,7 @@ const FALLBACK: ProductModule[] = [{
     { key: 'guide', name: 'Getting started', icon: 'help' },
     { key: 'projects', name: 'Projects', icon: 'grid' },
     { key: 'programs', name: 'Inspection programs', icon: 'layers' },
+    { key: 'operator', name: 'Run inspection', icon: 'camera' },
     { key: 'results', name: 'Results and review', icon: 'flag' },
     { key: 'inspect', name: 'Quick check', icon: 'inspect' },
   ],
@@ -73,9 +75,8 @@ function asIcon(name: string): IconName {
 }
 
 /** Topbar + left module menu around every page except the project studio. */
-export function AppShell({ page, moduleKey, orgId, children }: {
+export function AppShell({ page, orgId, children }: {
   page: ShellPage;
-  moduleKey?: string;
   orgId: string;
   children: ReactNode;
 }) {
@@ -86,19 +87,10 @@ export function AppShell({ page, moduleKey, orgId, children }: {
     <Topbar />
     <div className="shell">
       <nav className="sidebar" aria-label="Modules">
-        <a href="#/" className="side-module side-home" aria-current={page === 'home' ? 'page' : undefined}>
-          <span className="side-icon"><Icon name="home" /></span><span className="spacer">Home</span>
+        <a href="/" className="side-module side-home" aria-current={page === 'home' ? 'page' : undefined}>
+          <span className="side-icon"><Icon name="home" /></span><span className="spacer">Overview</span>
         </a>
-        {modules.map(module => {
-          const available = module.status === 'available';
-          if (!available) {
-            return <a key={module.key} href={`#/modules/${module.key}`} className="side-module soon"
-              aria-current={moduleKey === module.key ? 'page' : undefined}>
-              <span className="side-icon"><Icon name={asIcon(module.icon)} /></span>
-              <span className="spacer">{module.name}</span>
-              <span className="soon-pill">Soon</span>
-            </a>;
-          }
+        {modules.filter(module => module.status === 'available').map(module => {
           const here = module.sections.some(section => SECTION_HREF[section.key]?.pages.includes(page));
           const expanded = open[module.key] ?? true;
           return <div key={module.key} className={`side-group${expanded ? ' expanded' : ''}`}>
@@ -124,7 +116,7 @@ export function AppShell({ page, moduleKey, orgId, children }: {
           </div>;
         })}
         <div className="side-foot">
-          <a href="#/team" className="side-module" aria-current={page === 'team' ? 'page' : undefined}>
+          <a href="/team" className="side-module" aria-current={page === 'team' ? 'page' : undefined}>
             <span className="side-icon"><Icon name="team" /></span><span className="spacer">Workspace and team</span>
           </a>
         </div>
@@ -138,7 +130,7 @@ export function AppShell({ page, moduleKey, orgId, children }: {
 export function ModulePage({ moduleKey }: { moduleKey: string }) {
   const modules = useModules();
   const module = modules.find(item => item.key === moduleKey);
-  if (!module) return <main className="page narrow"><div className="empty"><h2>Module not found</h2><a className="btn" href="#/">Back</a></div></main>;
+  if (!module) return <main className="page narrow"><div className="empty"><h2>Module not found</h2><a className="btn" href="/">Back</a></div></main>;
   return <main className="page narrow">
     <section className="card module-hero">
       <span className="module-icon"><Icon name={asIcon(module.icon)} /></span>
@@ -149,8 +141,8 @@ export function ModulePage({ moduleKey }: { moduleKey: string }) {
         {module.highlights.map(item => <li key={item} className="ok"><span className="mark"><Icon name="check" /></span><span>{item}</span></li>)}
       </ul>}
       <div className="row">
-        <a className="btn" href="#/guide"><Icon name="target" /> Use object detection now</a>
-        <a className="btn ghost" href="#/programs"><Icon name="layers" /> Inspection programs</a>
+        <a className="btn" href="/guide"><Icon name="target" /> Use object detection now</a>
+        <a className="btn ghost" href="/programs"><Icon name="layers" /> Inspection programs</a>
       </div>
     </section>
   </main>;

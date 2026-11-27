@@ -1,0 +1,78 @@
+x-api-build: &api-build
+  context: ${VIWEB_API_CONTEXT:-../../viweb-ai}
+  target: base
+
+x-database-url: &database-url postgresql+asyncpg://smoke:smoke@postgres:5432/smoke
+
+services:
+  postgres:
+    image: postgres:16.8-alpine
+    environment:
+      POSTGRES_USER: smoke
+      POSTGRES_PASSWORD: smoke
+      POSTGRES_DB: smoke
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "smoke", "-d", "smoke"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  migrate:
+    build:
+      context: ${VIWEB_DB_CONTEXT:-../../viweb-db}
+    environment:
+      DATABASE_URL: *database-url
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  seed:
+    build: *api-build
+    command: ["python", "/fixtures/seed.py"]
+    environment:
+      DATABASE_URL: *database-url
+      VI_TRAINING_RUN_DIR: /var/lib/viweb-training
+    volumes:
+      - .:/fixtures:ro
+      - models:/var/lib/viweb-training
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  inference:
+    image: python:3.11-slim
+    command: ["python", "/fixtures/inference.py"]
+    volumes:
+      - .:/fixtures:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health/live', timeout=1)"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  api:
+    build: *api-build
+    command: ["uvicorn", "vi_api.bootstrap:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      DATABASE_URL: *database-url
+      APP_ORIGIN: http://127.0.0.1:${VIWEB_SMOKE_WEB_PORT:-3100}
+      INFERENCE_URL: http://inference:8001
+      VI_TRAINING_IMAGE_DIR: /var/lib/viweb-demo
+      VI_TRAINING_RUN_DIR: /var/lib/viweb-training
+    ports:
+      - "127.0.0.1:${VIWEB_SMOKE_API_PORT:-8100}:8000"
+    volumes:
+      - models:/var/lib/viweb-training:ro
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+      inference:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=2)"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  models:

@@ -3,39 +3,15 @@ import { useState } from 'react';
 import type { ClassKind } from '../../../services/api/trainingDatasets';
 import { Icon } from '../../../ui/Icon';
 import { KindBadge } from '../../../ui/KindBadge';
+import { LABEL_EXAMPLE } from '../../../ui/inspectionExample';
 import { KIND_LABEL, Modal, colorFor } from '../../../ui/common';
 import type { ClassEdit, Project } from '../../project/useProject';
 
 const KIND_HELP: Record<ClassKind, string> = {
-  good: 'Seeing it means PASS.',
-  defect: 'Seeing even one means FAIL.',
+  good: 'What you expect to see.',
+  defect: 'A visible problem to flag.',
   object: 'Just found and counted.',
 };
-
-export const STARTERS: { title: string; rows: ClassEdit[] }[] = [
-  {
-    title: 'Good + Defect',
-    rows: [{ name: 'Good', kind: 'good', hint: 'Looks right' }, { name: 'Defect', kind: 'defect', hint: 'Something is wrong' }],
-  },
-  {
-    title: 'Present + Missing',
-    rows: [{ name: 'Present', kind: 'good', hint: 'Part is in place' }, { name: 'Missing', kind: 'defect', hint: 'Empty slot where a part should be' }],
-  },
-  { title: 'Just count one object', rows: [{ name: 'Object', kind: 'object', hint: '' }] },
-  {
-    title: 'Board inspection',
-    rows: [
-      { name: 'bolt_ok', kind: 'good', hint: 'Bolt present and seated' },
-      { name: 'bolt_missing', kind: 'defect', hint: 'Empty bolt hole' },
-      { name: 'bolt_loose', kind: 'defect', hint: 'Bolt raised or no torque mark' },
-      { name: 'wire_inserted', kind: 'good', hint: 'Wire fully in the terminal' },
-      { name: 'wire_not_inserted', kind: 'defect', hint: 'Bare wire or empty terminal' },
-      { name: 'switch_on', kind: 'object', hint: 'Lever up' },
-      { name: 'switch_off', kind: 'object', hint: 'Lever down' },
-      { name: 'label', kind: 'object', hint: 'Part label present' },
-    ],
-  },
-];
 
 /** Edit the list of classes (what the model learns) in one go. */
 export function ClassesModal({ project, onClose }: { project: Project; onClose: () => void }) {
@@ -77,9 +53,9 @@ export function ClassesModal({ project, onClose }: { project: Project; onClose: 
     </dl>
 
     {empty && <div className="stack" style={{ gap: '.5rem' }}>
-      <span className="small muted"><Icon name="lightbulb" /> Not sure? Start from a common setup:</span>
-      <div className="row">{STARTERS.map(starter => <button key={starter.title} type="button" className="btn ghost small"
-        onClick={() => setRows(starter.rows)}>{starter.title}</button>)}</div>
+      <button type="button" className="btn ghost" onClick={() => setRows(LABEL_EXAMPLE.labels.map(label => ({ ...label })))}>
+        <Icon name="tag" /> Use box label example
+      </button>
     </div>}
 
     <div className="class-table">
@@ -87,7 +63,7 @@ export function ClassesModal({ project, onClose }: { project: Project; onClose: 
       {rows.map((row, position) => <div className="class-table-row" key={position}>
         <span className="input-swatch">
           <span className="swatch" style={{ background: colorFor(rows.map(item => item.name), row.name) }} />
-          <input className="input" aria-label={`Name of class ${position + 1}`} value={row.name} maxLength={80} placeholder="e.g. Cap, Scratch"
+          <input className="input" aria-label={`Name of class ${position + 1}`} value={row.name} maxLength={80} placeholder={LABEL_EXAMPLE.labels[0].name}
             onChange={event => update(position, { name: event.target.value })} />
         </span>
         <div className="seg kind-seg" role="group" aria-label={`Type of class ${position + 1}`}>
@@ -106,9 +82,7 @@ export function ClassesModal({ project, onClose }: { project: Project; onClose: 
       <span className="small muted">Renaming a class keeps its boxes. Removing it deletes its boxes.</span>
     </div>
     <div className="tip-box small">
-      <Icon name="lightbulb" /><span>Name classes the same way everywhere: short, lower case, thing then state,
-        for example <code>bolt_ok</code>, <code>bolt_missing</code>, <code>wire_red</code>. Mark problem classes as <b>Defect</b>:
-        an inspection program fails a zone as soon as it finds one.</span>
+      <Icon name="lightbulb" /><span>Use the same name for the same thing in every photo. Spaces and capital letters are fine. Mark visible problems as <b>Defect</b>.</span>
     </div>
     {error && <div className="alert" role="alert"><Icon name="alert" />{error}</div>}
   </Modal>;

@@ -17,12 +17,13 @@ function Scene({ children, title }: { children: ReactNode; title: string }) {
   </svg>;
 }
 
-/** A bottle cap seen from above. `defect` adds a crack. */
-function Cap({ x, y, r = 16, defect = false }: { x: number; y: number; r?: number; defect?: boolean }) {
-  return <g>
-    <circle className="ill-obj" cx={x} cy={y} r={r} />
-    <circle className="ill-obj-inner" cx={x} cy={y} r={r * .62} />
-    {defect && <path className="ill-crack" d={`M${x - r * .7} ${y - r * .5} l${r * .5} ${r * .35} l-${r * .15} ${r * .35} l${r * .6} ${r * .4}`} />}
+function Parcel({ x, y, crooked = false }: { x: number; y: number; crooked?: boolean }) {
+  return <g transform={`translate(${x} ${y})`}>
+    <rect className="ill-obj" x="-21" y="-17" width="42" height="34" rx="3" />
+    <g transform={crooked ? 'rotate(14)' : undefined}>
+      <rect className="ill-obj-inner" x="-12" y="-8" width="24" height="16" rx="2" />
+      <path className="ill-crack" d="M-7 -3H7M-7 2H3" />
+    </g>
   </g>;
 }
 
@@ -39,19 +40,19 @@ function Verdict({ ok }: { ok: boolean }) {
 const BOX_EXAMPLES: { ok: boolean; title: string; text: string; art: ReactNode }[] = [
   {
     ok: true, title: 'Tight and complete', text: 'The box touches the edges of the whole object.',
-    art: <><Cap x={60} y={42} /><LabelBox x={43} y={25} w={34} h={34} tone="ok" /></>,
+    art: <><Parcel x={60} y={42} /><LabelBox x={47} y={33} w={26} h={18} tone="ok" /></>,
   },
   {
     ok: false, title: 'Too loose', text: 'Lots of background inside the box confuses the model.',
-    art: <><Cap x={60} y={42} /><LabelBox x={22} y={10} w={76} h={62} tone="bad" /></>,
+    art: <><Parcel x={60} y={42} /><LabelBox x={22} y={10} w={76} h={62} tone="bad" /></>,
   },
   {
     ok: false, title: 'Cuts it off', text: 'Part of the object is outside the box.',
-    art: <><Cap x={60} y={42} /><LabelBox x={52} y={32} w={26} h={20} tone="bad" /></>,
+    art: <><Parcel x={60} y={42} /><LabelBox x={52} y={32} w={26} h={20} tone="bad" /></>,
   },
   {
     ok: false, title: 'Missed one', text: 'Every object in the photo needs its own box.',
-    art: <><Cap x={36} y={42} r={13} /><Cap x={84} y={42} r={13} /><LabelBox x={21} y={27} w={30} h={30} tone="ok" /></>,
+    art: <><Parcel x={33} y={42} /><Parcel x={87} y={42} /><LabelBox x={20} y={33} w={26} h={18} tone="ok" /></>,
   },
 ];
 
@@ -70,12 +71,12 @@ export function BoxExamples() {
 /** The three kinds of photo a project needs. Pass/fail projects show good and defective parts. */
 export function PhotoMix({ passFail }: { passFail: boolean }) {
   const items: { title: string; text: string; art: ReactNode }[] = passFail ? [
-    { title: 'Good parts', text: '10–20 photos', art: <Cap x={60} y={42} /> },
-    { title: 'Defective parts', text: 'About as many as good', art: <Cap x={60} y={42} defect /> },
+    { title: 'Straight label', text: 'Use different boxes', art: <Parcel x={60} y={42} /> },
+    { title: 'Crooked label', text: 'Show different angles', art: <Parcel x={60} y={42} crooked /> },
     { title: 'Empty scene', text: '2–5 photos', art: null },
   ] : [
-    { title: 'One object', text: 'Many angles', art: <Cap x={60} y={42} /> },
-    { title: 'Several objects', text: 'Box each one', art: <><Cap x={36} y={42} r={13} /><Cap x={84} y={42} r={13} /></> },
+    { title: 'One label', text: 'Many angles', art: <Parcel x={60} y={42} /> },
+    { title: 'Two labels', text: 'Box each one', art: <><Parcel x={33} y={42} /><Parcel x={87} y={42} /></> },
     { title: 'Empty scene', text: '2–5 photos', art: null },
   ];
   return <div className="ill-grid three" role="list" aria-label="Kinds of photo to upload">

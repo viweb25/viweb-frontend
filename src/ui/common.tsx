@@ -1,6 +1,7 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { Icon } from './Icon';
+import { useLocation } from './navigation';
 
 /* ---------- Routing ---------- */
 
@@ -14,6 +15,7 @@ export type Route =
   | { page: 'program'; id: string }
   | { page: 'results'; run?: string }
   | { page: 'inspect' }
+  | { page: 'operator'; program?: string }
   | { page: 'team' }
   | { page: 'module'; key: string }
   | { page: 'project'; org: string; dataset: string; step: Step };
@@ -21,8 +23,13 @@ export type Route =
 /** Pages shown inside the app shell with the module sidebar. */
 export type ShellPage = Exclude<Route['page'], 'project'>;
 
-export function parseRoute(hash = window.location.hash): Route {
-  const parts = hash.replace(/^#\/?/, '').split('?')[0].split('/').filter(Boolean).map(decodeURIComponent);
+export function parseRoute(path = window.location.pathname): Route {
+  let parts: string[];
+  try {
+    parts = path.split('?')[0].split('/').filter(Boolean).map(decodeURIComponent);
+  } catch {
+    return { page: 'home' };
+  }
   if (parts[0] === 'projects' && parts[1] && parts[2]) {
     const step = (STEPS as readonly string[]).includes(parts[3]) ? parts[3] as Step : 'detect';
     return { page: 'project', org: parts[1], dataset: parts[2], step };
@@ -32,23 +39,19 @@ export function parseRoute(hash = window.location.hash): Route {
   if (parts[0] === 'results') return parts[1] ? { page: 'results', run: parts[1] } : { page: 'results' };
   if (parts[0] === 'modules' && parts[1]) return { page: 'module', key: parts[1] };
   if (parts[0] === 'guide') return { page: 'guide' };
+  if (parts[0] === 'operator') return { page: 'operator', program: parts[1] };
   if (parts[0] === 'inspect') return { page: 'inspect' };
   if (parts[0] === 'team') return { page: 'team' };
   return { page: 'home' };
 }
 
 export function projectHref(org: string, dataset: string, step: Step = 'detect') {
-  return `#/projects/${encodeURIComponent(org)}/${encodeURIComponent(dataset)}/${step}`;
+  return `/projects/${encodeURIComponent(org)}/${encodeURIComponent(dataset)}/${step}`;
 }
 
 export function useRoute() {
-  const [route, setRoute] = useState(parseRoute);
-  useEffect(() => {
-    const update = () => setRoute(parseRoute());
-    window.addEventListener('hashchange', update);
-    return () => window.removeEventListener('hashchange', update);
-  }, []);
-  return route;
+  const location = useLocation();
+  return useMemo(() => parseRoute(location), [location]);
 }
 
 /* ---------- Class colors (data colors for boxes) ---------- */
