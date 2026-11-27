@@ -41,3 +41,28 @@ export type WorkspaceMember = { id: string; name: string; role: string };
 export function listWorkspaceMembers(orgId: string, signal?: AbortSignal) {
   return get<WorkspaceMember[]>(`/api/v1/organisations/${orgId}/members`, signal);
 }
+
+async function postAccountAction(path: string, body: object) {
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw await readApiError(response);
+}
+
+export function sendWorkspaceInvitation(orgId: string, email: string, role: 'operator' | 'viewer') {
+  return postAccountAction(`/api/v1/organisations/${orgId}/invitations`, { email, role });
+}
+
+export function acceptWorkspaceInvitation(token: string, password?: string) {
+  return postAccountAction(`${endpoint}/invitations/accept`, { token, password });
+}
+
+export function requestPasswordRecovery(email: string) {
+  return postAccountAction(`${endpoint}/password/recovery`, { email });
+}
+
+export function resetPassword(token: string, password: string) {
+  return postAccountAction(`${endpoint}/password/reset`, { token, password });
+}

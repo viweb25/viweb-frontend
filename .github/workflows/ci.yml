@@ -1,4 +1,4 @@
-# Every pull request: type-check and build the React app.
+# Pull requests: type-check and build the React app, plus browser coverage for internal branches.
 # Every push to main: also build the web image (static files on Caddy) and push it as
 # ghcr.io/<owner>/viweb-frontend:sha-<12 chars> (pinned by releases) and :main.
 name: CI
@@ -8,6 +8,15 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      api_ref:
+        description: API branch, tag, or commit to test
+        default: main
+        type: string
+      db_ref:
+        description: Database branch, tag, or commit to test
+        default: main
+        type: string
 
 permissions:
   contents: read
@@ -28,6 +37,47 @@ jobs:
       - run: npm ci
       - name: Type-check and build
         run: npm run build
+
+  browser:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: viweb-frontend
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: viweb-frontend
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/viweb-ai
+          ref: ${{ inputs.api_ref || 'main' }}
+          path: viweb-ai
+          token: ${{ secrets.VIWEB_CI_READ_TOKEN || github.token }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/viweb-db
+          ref: ${{ inputs.db_ref || 'main' }}
+          path: viweb-db
+          token: ${{ secrets.VIWEB_CI_READ_TOKEN || github.token }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: viweb-frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: viweb-frontend/package-lock.json
+      - run: npm ci
+      - run: npm exec -- playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-test-results
+          path: viweb-frontend/test-results
+          if-no-files-found: ignore
 
   image:
     needs: build

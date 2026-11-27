@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 
 import { useWorkspace } from '../../context/WorkspaceContext';
 import {
-  listPrograms, listRuns, openProgram, openRun, reviewRun, runImageUrl, sendRunToDataset,
-  type Decision, type InspectionProgram, type InspectionRun, type ProgramSummary, type ReviewStatus,
+  listResultPrograms, listRuns, openRun, resultsCsvUrl, reviewRun, runImageUrl, sendRunToDataset,
+  type Decision, type InspectionRun, type ResultProgram, type ReviewStatus, type RunCursor,
 } from '../../services/api/inspectionPrograms';
 import { Icon } from '../../ui/Icon';
 import { ErrorBox, Loading, errorText, projectHref, timeAgo, useToast } from '../../ui/common';
@@ -17,32 +17,69 @@ const VIEWS: { key: View; label: string; filter: { decision?: Decision; reviewSt
   { key: 'all', label: 'All results', filter: {} },
 ];
 
+const PAGE_SIZE = 24;
+
+function dayBoundary(day: string, end = false) {
+  if (!day) return undefined;
+  const date = new Date(`${day}T00:00:00`);
+  if (!Number.isFinite(date.getTime())) return undefined;
+  if (end) date.setDate(date.getDate() + 1);
+  return date.toISOString();
+}
+
+function calendarDate(date: Date) {
+  return [date.getFullYear(), date.getMonth() + 1, date.getDate()].map(value => String(value).padStart(2, '0')).join('-');
+}
+
 export function ResultsPage({ runId }: { runId?: string }) {
   const { org } = useWorkspace();
   const orgId = org!.org_id;
   const [view, setView] = useState<View>('review');
   const [programId, setProgramId] = useState('');
-  const [programs, setPrograms] = useState<ProgramSummary[]>([]);
+  const [programs, setPrograms] = useState<ResultProgram[]>([]);
+  const [programError, setProgramError] = useState('');
+  const [fromDay, setFromDay] = useState('');
+  const [untilDay, setUntilDay] = useState('');
+  const [pages, setPages] = useState<RunCursor[]>([]);
+  const before = pages.at(-1);
+  const invalidDates = Boolean(fromDay && untilDay && fromDay > untilDay);
+  const filters = {
+    ...VIEWS.find(item => item.key === view)!.filter,
+    programId: programId || undefined,
+    fromAt: dayBoundary(fromDay),
+    untilAt: dayBoundary(untilDay, true),
+  };
   const [runs, setRuns] = useState<InspectionRun[] | null>(null);
   const [error, setError] = useState('');
   const [version, setVersion] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
-    listPrograms(orgId, controller.signal).then(setPrograms).catch(() => undefined);
+    setProgramError('');
+    listResultPrograms(orgId, controller.signal).then(items => {
+      if (!controller.signal.aborted) setPrograms(items);
+    }).catch(cause => {
+      if (!controller.signal.aborted) setProgramError(errorText(cause, 'Could not load programs.'));
+    });
     return () => controller.abort();
-  }, [orgId]);
+  }, [orgId, version]);
 
   useEffect(() => {
     const controller = new AbortController();
     setRuns(null);
     setError('');
-    const filter = VIEWS.find(item => item.key === view)!.filter;
-    listRuns(orgId, { ...filter, programId: programId || undefined, limit: 100 }, controller.signal).then(setRuns).catch(cause => {
+    if (invalidDates) return;
+    listRuns(orgId, { ...filters, before, limit: PAGE_SIZE + 1 }, controller.signal).then(items => {
+      if (!controller.signal.aborted) setRuns(items);
+    }).catch(cause => {
       if (!controller.signal.aborted) setError(errorText(cause, 'Could not load results.'));
     });
     return () => controller.abort();
-  }, [orgId, view, programId, version]);
+  }, [orgId, view, programId, fromDay, untilDay, before, invalidDates, version]);
+
+  const visibleRuns = runs?.slice(0, PAGE_SIZE);
+  const last = visibleRuns?.at(-1);
+  const hasNext = (runs?.length ?? 0) > PAGE_SIZE && Boolean(last?.created_at);
 
   const [open, setOpen] = useState<InspectionRun | null>(null);
 
@@ -50,15 +87,25 @@ export function ResultsPage({ runId }: { runId?: string }) {
   useEffect(() => {
     if (!runId) { setOpen(null); return; }
     const controller = new AbortController();
-    openRun(orgId, runId, controller.signal).then(setOpen).catch(cause => {
+    openRun(orgId, runId, controller.signal).then(item => {
+      if (!controller.signal.aborted) setOpen(item);
+    }).catch(cause => {
       if (!controller.signal.aborted) setError(errorText(cause, 'Could not open this result.'));
     });
     return () => controller.abort();
   }, [orgId, runId, version]);
-  const total = runs?.length ?? 0;
-  const passed = runs?.filter(run => run.decision === 'PASS').length ?? 0;
+  const currentRun = open?.id === runId ? open : null;
 
-  return <main className="page wide">
+  function recentDays(days: number) {
+    const lastDay = new Date();
+    const firstDay = new Date(lastDay);
+    firstDay.setDate(firstDay.getDate() - days + 1);
+    setFromDay(calendarDate(firstDay));
+    setUntilDay(calendarDate(lastDay));
+    setPages([]);
+  }
+
+  return <main className="page workspace-page">
     <header className="page-head">
       <div>
         <span className="eyebrow"><Icon name="flag" /> Object detection</span>
@@ -67,30 +114,55 @@ export function ResultsPage({ runId }: { runId?: string }) {
       </div>
     </header>
 
-    <div className="toolbar">
-      <div className="seg" role="group" aria-label="Show">
-        {VIEWS.map(item => <button key={item.key} type="button" aria-pressed={view === item.key} onClick={() => setView(item.key)}>{item.label}</button>)}
+    <section className="card review-filters" aria-label="Result filters">
+      <div className="row">
+        <div className="seg" role="group" aria-label="Show">
+          {VIEWS.map(item => <button key={item.key} type="button" aria-pressed={view === item.key}
+            onClick={() => { setView(item.key); setPages([]); }}>{item.label}</button>)}
+        </div>
+        <span className="spacer" />
+        {!invalidDates && <a className="btn ghost" href={resultsCsvUrl(orgId, filters)} download>
+          <Icon name="download" /> Export CSV
+        </a>}
       </div>
-      <select className="input" style={{ maxWidth: 280 }} aria-label="Program" value={programId} onChange={event => setProgramId(event.target.value)}>
-        <option value="">All programs</option>
-        {programs.map(program => <option key={program.id} value={program.id}>{program.name}</option>)}
-      </select>
-      <span className="spacer" />
-      {runs && <span className="small muted">{total} shown · {passed} passed</span>}
-    </div>
+      <div className="review-filter-fields">
+        <label className="field">Program
+          <select className="input" value={programId} onChange={event => { setProgramId(event.target.value); setPages([]); }}>
+            <option value="">All programs</option>
+            {programs.map(program => <option key={program.id} value={program.id}>{program.name}</option>)}
+          </select>
+        </label>
+        <label className="field">From
+          <input type="date" value={fromDay} max={untilDay || undefined}
+            onChange={event => { setFromDay(event.target.value); setPages([]); }} />
+        </label>
+        <label className="field">To
+          <input type="date" value={untilDay} min={fromDay || undefined}
+            onChange={event => { setUntilDay(event.target.value); setPages([]); }} />
+        </label>
+        {(programId || fromDay || untilDay) && <button className="btn ghost" type="button" onClick={() => {
+          setProgramId(''); setFromDay(''); setUntilDay(''); setPages([]);
+        }}>Clear filters</button>}
+      </div>
+      <div className="row" role="group" aria-label="Quick date filters">
+        <button className="btn ghost small" type="button" onClick={() => recentDays(1)}>Today</button>
+        <button className="btn ghost small" type="button" onClick={() => recentDays(7)}>Last 7 days</button>
+      </div>
+    </section>
 
+    {invalidDates && <ErrorBox message="Choose an end date on or after the start date." />}
+    {programError && <ErrorBox message={programError} onRetry={() => setVersion(value => value + 1)} />}
     {error && <ErrorBox message={error} onRetry={() => setVersion(value => value + 1)} />}
-    {!runs && !error && <Loading label="Loading results…" />}
-    {runs && runs.length === 0 && !open && <div className="empty">
-      <span className="bubble"><Icon name={view === 'review' ? 'check' : 'flag'} /></span>
-      <h2>{view === 'review' ? 'Nothing waiting for review' : 'No results yet'}</h2>
-      <p className="muted">{view === 'review' ? 'Unsure results land here automatically.' : 'Inspect a board from an inspection program to see results here.'}</p>
-      <a className="btn ghost" href="#/programs"><Icon name="layers" /> Inspection programs</a>
+    {!runs && !error && !invalidDates && <Loading label="Loading results…" />}
+    {visibleRuns?.length === 0 && !currentRun && <div className="empty">
+      <span className="bubble"><Icon name="flag" /></span>
+      <h2>{pages.length ? 'No results on this page' : view === 'review' && !programId && !fromDay && !untilDay ? 'Nothing waiting for review' : 'No matching results'}</h2>
+      <p className="muted">{pages.length ? 'Go back to see newer results.' : 'Try a different view or date range.'}</p>
     </div>}
 
-    {runs && (runs.length > 0 || open) && <div className={`results-layout${open ? ' with-detail' : ''}`}>
-      <ul className="run-list">{runs.map(run => <li key={run.id}>
-        <a href={`#/results/${run.id}`} aria-current={run.id === runId ? 'true' : undefined} className="run-row">
+    {(Boolean(visibleRuns?.length) || currentRun) && <div className={`results-layout${currentRun ? ' with-detail' : ''}`}>
+      <ul className="run-list">{visibleRuns?.map(run => <li key={run.id}>
+        <a href={`/results/${run.id}`} aria-current={run.id === runId ? 'true' : undefined} className="run-row">
           <img src={runImageUrl(orgId, run.id)} alt="" loading="lazy" />
           <span className="spacer">
             <b>{run.program_name}</b>
@@ -100,8 +172,18 @@ export function ResultsPage({ runId }: { runId?: string }) {
           <DecisionBadge decision={run.decision} />
         </a>
       </li>)}</ul>
-      {open && <RunDetail key={`${open.id}-${open.review_status}-${open.sent_to_dataset_at}`} orgId={orgId} run={open} onChanged={() => setVersion(value => value + 1)} />}
+      {currentRun && <RunDetail key={`${currentRun.id}-${currentRun.review_status}-${currentRun.sent_to_dataset_at}`} orgId={orgId} run={currentRun} onChanged={() => setVersion(value => value + 1)} />}
     </div>}
+
+    {(pages.length > 0 || hasNext) && <nav className="review-pagination row" aria-label="Results pages">
+      <button className="btn ghost" type="button" disabled={!pages.length}
+        onClick={() => setPages(current => current.slice(0, -1))}>Previous</button>
+      <span className="small muted" aria-live="polite">Page {pages.length + 1}</span>
+      <button className="btn ghost" type="button" disabled={!runs || !hasNext} onClick={() => {
+        const at = last?.created_at;
+        if (last && at) setPages(current => [...current, { at, id: last.id }]);
+      }}>Next</button>
+    </nav>}
   </main>;
 }
 
@@ -114,16 +196,10 @@ function summarize(run: InspectionRun) {
 function RunDetail({ orgId, run, onChanged }: { orgId: string; run: InspectionRun; onChanged: () => void }) {
   const { canEdit } = useWorkspace();
   const toast = useToast();
-  const [program, setProgram] = useState<InspectionProgram | null>(null);
+  const snapshot = run.program_snapshot;
   const [note, setNote] = useState(run.review_note);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-
-  useEffect(() => {
-    const controller = new AbortController();
-    openProgram(orgId, run.program_id, controller.signal).then(setProgram).catch(() => undefined);
-    return () => controller.abort();
-  }, [orgId, run.program_id]);
 
   async function act(action: () => Promise<unknown>, message: string) {
     setBusy(true);
@@ -143,16 +219,17 @@ function RunDetail({ orgId, run, onChanged }: { orgId: string; run: InspectionRu
     <div className="row">
       <DecisionBadge decision={run.decision} large />
       <span className="spacer"><b>{run.program_name}</b><br /><small className="muted">{run.created_at && new Date(run.created_at).toLocaleString()}</small></span>
-      <a className="icon-btn" href="#/results" aria-label="Close"><Icon name="close" /></a>
+      <a className="icon-btn" href="/results" aria-label="Close"><Icon name="close" /></a>
     </div>
-    <BoardOverlay src={runImageUrl(orgId, run.id)} zones={program?.zones ?? []} results={run.zone_results}
-      detections={run.detections} labels={program?.classes ?? []} confidence={run.confidence} />
+    <BoardOverlay src={runImageUrl(orgId, run.id)} zones={snapshot?.zones.map(({ region, ...zone }) => ({ ...zone, ...region })) ?? []} results={run.zone_results}
+      detections={run.detections} labels={snapshot?.classes ?? []} confidence={run.confidence} />
+    <p className="small muted">{snapshot ? `Program revision ${snapshot.revision}` : 'This run predates saved zone layouts.'}</p>
     <ZoneResultTable results={run.zone_results} />
 
     <div className="review-box">
       <h3><Icon name="eye" /> Was the model right?</h3>
       <p className="small muted">Your answer is logged. Wrong results are the best examples to train on next.</p>
-      <label className="field">Note (optional)<input maxLength={400} value={note} disabled={!canEdit} placeholder="e.g. bolt was there, glare on metal"
+      <label className="field">Note (optional)<input maxLength={400} value={note} disabled={!canEdit} placeholder="Example: The label was straight, but there was glare."
         onChange={event => setNote(event.target.value)} /></label>
       {canEdit && <div className="row">
         <button type="button" className="btn ghost" disabled={busy} aria-pressed={run.review_status === 'confirmed'}
@@ -165,7 +242,7 @@ function RunDetail({ orgId, run, onChanged }: { orgId: string; run: InspectionRu
 
     <div className="review-box">
       <h3><Icon name="refresh" /> Teach the model with this photo</h3>
-      {run.sent_to_dataset_at ? <p className="small"><Icon name="check" /> Added to the project {timeAgo(run.sent_to_dataset_at)}.
+      {run.dataset_archived ? <p className="small muted">This project is archived.</p> : run.sent_to_dataset_at ? <p className="small"><Icon name="check" /> Added to the project {timeAgo(run.sent_to_dataset_at)}.
         {run.dataset_id && <> <a href={projectHref(orgId, run.dataset_id, 'label')}>Label it now</a>, then train again.</>}</p>
         : <>
           <p className="small muted">Adds the photo to the project with the model's boxes as suggestions. Correct them in Label, then train a new version.</p>

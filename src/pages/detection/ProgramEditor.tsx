@@ -1,8 +1,9 @@
+import { navigate } from '../../ui/navigation';
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 
 import { useWorkspace } from '../../context/WorkspaceContext';
 import {
-  captureGolden, deleteProgram, inspectBoard, openProgram, saveProgram,
+  activateProgram, captureGolden, deleteProgram, listProgramVersions, openProgram, saveProgram, testProgramDraft,
   type InspectionProgram, type InspectionRun, type Zone,
 } from '../../services/api/inspectionPrograms';
 import {
@@ -13,7 +14,7 @@ import { ErrorBox, Loading, errorText, percent, projectHref, timeAgo, useObjectU
 import { CameraCapture, versionName } from '../ModelTester';
 import { BoardOverlay, DECISION_INFO, DecisionBadge, ZoneResultTable, toJpeg } from './inspectionUi';
 
-type Tab = 'setup' | 'inspect';
+type Tab = 'setup' | 'test';
 type Point = { x: number; y: number };
 
 const clamp = (value: number) => Math.min(1, Math.max(0, value));
@@ -22,6 +23,7 @@ const round = (value: number) => Math.round(value * 1000) / 1000;
 export function ProgramEditor({ programId }: { programId: string }) {
   const { org, canEdit } = useWorkspace();
   const orgId = org!.org_id;
+  const canPublish = org?.role === 'owner' || org?.role === 'admin';
   const toast = useToast();
   const [program, setProgram] = useState<InspectionProgram | null>(null);
   const [models, setModels] = useState<TrainingJob[]>([]);
@@ -31,6 +33,8 @@ export function ProgramEditor({ programId }: { programId: string }) {
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState('');
+  const [versions, setVersions] = useState<number[]>([]);
+  const [rollbackRevision, setRollbackRevision] = useState('');
   const [error, setError] = useState('');
   const [tab, setTab] = useState<Tab>('setup');
   const [drawing, setDrawing] = useState(false);
@@ -47,6 +51,9 @@ export function ProgramEditor({ programId }: { programId: string }) {
     const controller = new AbortController();
     openProgram(orgId, programId, controller.signal).then(async loaded => {
       setProgram(loaded);
+      if (canPublish) listProgramVersions(orgId, programId, controller.signal).then(setVersions).catch(cause => {
+        if (!controller.signal.aborted) setError(errorText(cause, 'Could not load published revisions.'));
+      });
       setSelected(loaded.zones[0]?.id ?? null);
       const [jobs, dataset] = await Promise.all([
         listCompletedJobs(orgId, loaded.dataset_id, controller.signal).catch(() => []),
@@ -60,7 +67,7 @@ export function ProgramEditor({ programId }: { programId: string }) {
       if (!controller.signal.aborted) setLoadError(errorText(cause, 'Could not open this program.'));
     });
     return () => controller.abort();
-  }, [orgId, programId]);
+  }, [orgId, programId, canPublish]);
 
   useEffect(() => { if (program) document.title = `${program.name} · Vision Studio`; }, [program?.name]);
 
@@ -151,7 +158,7 @@ export function ProgramEditor({ programId }: { programId: string }) {
       const saved = dirty ? await save() : program;
       if (!saved) return;
       const jpeg = await toJpeg(image);
-      const result = await inspectBoard(orgId, saved.id, jpeg);
+      const result = await testProgramDraft(orgId, saved.id, saved.revision, jpeg);
       setRunImage(jpeg);
       setRun(result);
     } catch (cause) {
@@ -161,44 +168,73 @@ export function ProgramEditor({ programId }: { programId: string }) {
     }
   }
 
+  async function activate(action: 'publish' | 'rollback') {
+    if (!program || busy || saving) return;
+    if (action === 'rollback' && !rollbackRevision) return;
+    setBusy(action);
+    setError('');
+    try {
+      const saved = action === 'publish' && dirty ? await save() : program;
+      if (!saved) return;
+      const revision = action === 'publish' ? saved.revision : Number(rollbackRevision);
+      await activateProgram(orgId, program.id, revision, action);
+      setProgram(current => current && { ...current, published_revision: revision });
+      setVersions(current => [...new Set([revision, ...current])].sort((a, b) => b - a));
+      setRollbackRevision('');
+      toast(`Revision ${revision} is live`);
+    } catch (cause) {
+      setError(errorText(cause, 'Could not change the live revision.'));
+    } finally {
+      setBusy('');
+    }
+  }
+
+  function changeTab(next: Tab) {
+    setTab(next);
+    setRun(null);
+    setRunImage(null);
+  }
+
   async function remove() {
-    if (!program || !window.confirm(`Delete “${program.name}” and all its logged results?`)) return;
+    if (!program || !window.confirm(`Archive “${program.name}”? Its logged results will stay in Results and review.`)) return;
     try {
       await deleteProgram(orgId, program.id);
-      window.location.hash = '#/programs';
+      navigate('/programs');
     } catch (cause) {
-      setError(errorText(cause, 'Could not delete the program.'));
+      setError(errorText(cause, 'Could not archive the program.'));
     }
   }
 
   /* ---------- Render ---------- */
 
-  if (loadError) return <main className="page narrow"><ErrorBox message={loadError} /><a className="btn ghost" href="#/programs"><Icon name="back" /> All programs</a></main>;
+  if (loadError) return <main className="page narrow"><ErrorBox message={loadError} /><a className="btn ghost" href="/programs"><Icon name="back" /> All programs</a></main>;
   if (!program) return <main className="page"><Loading label="Opening program…" /></main>;
 
-  const zoneExpected = program.zones.reduce((sum, zone) => sum + Object.values(zone.expected).reduce((a, b) => a + b, 0), 0);
+  const editing = canEdit && !saving && !busy;
+  const hasExpectedCounts = program.zones.some(zone => Object.keys(zone.expected).length > 0);
   const steps = [
     { label: 'Choose a model', done: !!program.model_job_id },
     { label: 'Draw zones', done: program.zones.length > 0 },
-    { label: 'Golden layout', done: zoneExpected > 0 },
-    { label: 'Inspect boards', done: !!run },
+    { label: 'Golden layout', done: hasExpectedCounts },
+    { label: 'Publish for inspections', done: !!program.published_revision },
   ];
   const ready = steps.slice(0, 3).every(step => step.done);
-  const boardSrc = tab === 'inspect' && run && runUrl ? runUrl : localLayout || layoutUrl;
+  const boardSrc = tab !== 'setup' && run && runUrl ? runUrl : localLayout || layoutUrl;
 
   return <main className="page wide">
     <header className="page-head">
       <div style={{ minWidth: 0, flex: '1 1 320px' }}>
-        <a className="crumb-link" href="#/programs"><Icon name="back" /> Inspection programs</a>
-        <input className="title-input" aria-label="Program name" value={program.name} maxLength={80} disabled={!canEdit}
+        <a className="crumb-link" href="/programs"><Icon name="back" /> Inspection programs</a>
+        <input className="title-input" aria-label="Program name" value={program.name} maxLength={80} disabled={!editing}
           onChange={event => change(current => ({ ...current, name: event.target.value }))} />
         <p className="small muted"><Icon name="grid" /> Project: <a href={projectHref(orgId, program.dataset_id, 'label')}>open labels</a>
           {program.updated_at && <> · saved {timeAgo(program.updated_at)}</>}</p>
+        <p className="small muted">Draft revision {program.revision} · {program.published_revision ? `Live revision ${program.published_revision}` : 'Unpublished'}</p>
       </div>
       {canEdit && <div className="row">
         <span className="save-state">{saving ? 'Saving…' : dirty ? <><Icon name="clock" /> Unsaved changes</> : <><Icon name="check" /> Saved</>}</span>
-        <button type="button" className="btn" disabled={!dirty || saving} onClick={() => void save()}><Icon name="save" /> Save</button>
-        <button type="button" className="icon-btn" aria-label="Delete program" title="Delete program" onClick={() => void remove()}><Icon name="trash" /></button>
+        <button type="button" className="btn" disabled={!dirty || saving || !!busy} onClick={() => void save()}><Icon name="save" /> Save draft</button>
+        <button type="button" className="icon-btn" aria-label="Archive program" title="Archive program" disabled={!!busy || saving} onClick={() => void remove()}><Icon name="trash" /></button>
       </div>}
     </header>
 
@@ -213,9 +249,9 @@ export function ProgramEditor({ programId }: { programId: string }) {
     <div className="program-layout">
       <section className="card board-card">
         <div className="canvas-tools">
-          {tab === 'setup' && canEdit && <button type="button" className={`btn small ${drawing ? '' : 'ghost'}`} aria-pressed={drawing}
+          {tab === 'setup' && editing && <button type="button" className={`btn small ${drawing ? '' : 'ghost'}`} aria-pressed={drawing}
             onClick={() => setDrawing(value => !value)}><Icon name="plus" /> {drawing ? 'Drag on the photo…' : 'Draw a zone'}</button>}
-          {tab === 'inspect' && run && <span className="row small"><DecisionBadge decision={run.decision} /> Last inspected board</span>}
+          {tab !== 'setup' && run && <span className="row small"><DecisionBadge decision={run.decision} /> Draft test</span>}
           <span className="spacer" />
           {tab === 'setup' && <>
             <button type="button" className="btn ghost small" onClick={() => fileInput.current?.click()}><Icon name="image" /> Layout photo</button>
@@ -225,9 +261,9 @@ export function ProgramEditor({ programId }: { programId: string }) {
             }} />
           </>}
         </div>
-        {boardSrc ? <ZoneCanvas src={boardSrc} program={program} drawing={drawing && tab === 'setup' && canEdit}
+        {boardSrc ? <ZoneCanvas src={boardSrc} program={program} drawing={drawing && tab === 'setup' && !!editing}
           selected={selected} onSelect={setSelected} onDraw={addZone}
-          run={tab === 'inspect' ? run : null} />
+          run={tab === 'setup' ? null : run} />
           : <div className="empty"><Icon name="image" /><p className="muted">Choose a layout photo of the board to draw zones on.</p></div>}
         <p className="small muted"><Icon name="info" /> {tab === 'setup'
           ? 'Use a photo from the fixed camera. Zones are stored as fractions of the photo, so they fit every photo from the same setup.'
@@ -236,8 +272,10 @@ export function ProgramEditor({ programId }: { programId: string }) {
 
       <aside className="panel-stack program-panel">
         <div className="seg" role="tablist" aria-label="Program panel">
-          <button type="button" role="tab" aria-selected={tab === 'setup'} aria-pressed={tab === 'setup'} onClick={() => setTab('setup')}><Icon name="sliders" /> Set up</button>
-          <button type="button" role="tab" aria-selected={tab === 'inspect'} aria-pressed={tab === 'inspect'} onClick={() => setTab('inspect')}><Icon name="inspect" /> Inspect a board</button>
+          <button type="button" role="tab" aria-selected={tab === 'setup'} aria-pressed={tab === 'setup'} disabled={!!busy || saving} onClick={() => changeTab('setup')}><Icon name="sliders" /> Set up</button>
+          {canEdit && <button type="button" role="tab" aria-selected={tab === 'test'} aria-pressed={tab === 'test'}
+            disabled={!!busy || saving} onClick={() => changeTab('test')}>Test draft</button>}
+
         </div>
 
         {tab === 'setup' ? <>
@@ -247,7 +285,7 @@ export function ProgramEditor({ programId }: { programId: string }) {
               <div className="notice small"><Icon name="cpu" /><span>Using model <code>{program.model_job_id.slice(0, 8)}</code>. It is not in the project's model list any more; choose another below if needed.</span></div>}
             {models.length === 0 ? <div className="notice small"><Icon name="info" /><span>No trained model yet. <a href={projectHref(orgId, program.dataset_id, 'train')}>Train one</a> first.</span></div>
               : <div className="versions">{models.map(model => <button key={model.id} type="button" className="version"
-                aria-pressed={program.model_job_id === model.id} disabled={!canEdit}
+                aria-pressed={program.model_job_id === model.id} disabled={!editing}
                 onClick={() => change(current => ({ ...current, model_job_id: model.id }))}>
                 <Icon name="cpu" />
                 <span><b>{versionName(model, models)}</b><small>{model.finished_at ? timeAgo(model.finished_at) : ''}</small></span>
@@ -258,7 +296,7 @@ export function ProgramEditor({ programId }: { programId: string }) {
           <section className="card side-card">
             <h3><span><Icon name="target" /> Thresholds</span></h3>
             <label className="field">Confidence: {Math.round(program.confidence * 100)}%
-              <input type="range" min={5} max={95} step={5} value={Math.round(program.confidence * 100)} disabled={!canEdit}
+              <input type="range" min={5} max={95} step={5} value={Math.round(program.confidence * 100)} disabled={!editing}
                 onChange={event => {
                   const confidence = Number(event.target.value) / 100;
                   change(current => ({ ...current, confidence, review_margin: Math.min(current.review_margin, confidence - .05) }));
@@ -267,7 +305,7 @@ export function ProgramEditor({ programId }: { programId: string }) {
             </label>
             <label className="field">Review band: {Math.round(program.review_margin * 100)}%
               <input type="range" min={0} max={Math.min(50, Math.round(program.confidence * 100) - 5)} step={5}
-                value={Math.round(program.review_margin * 100)} disabled={!canEdit}
+                value={Math.round(program.review_margin * 100)} disabled={!editing}
                 onChange={event => change(current => ({ ...current, review_margin: Number(event.target.value) / 100 }))} />
               <small>Parts found with {Math.round((program.confidence - program.review_margin) * 100)}–{Math.round(program.confidence * 100)}% confidence send the board to a person for review.</small>
             </label>
@@ -275,9 +313,9 @@ export function ProgramEditor({ programId }: { programId: string }) {
 
           <section className="card side-card">
             <h3><span><Icon name="grid" /> 2. Zones</span><span className="chip plain">{program.zones.length}</span></h3>
-            {program.zones.length === 0 && <p className="small muted">Click <b>Draw a zone</b> and drag around one area of the board, for example “Terminal block” or “Switch row”.</p>}
+            {program.zones.length === 0 && <p className="small muted">Click <b>Draw a zone</b> and drag around the area to check, such as where a shipping label should be.</p>}
             <ul className="zone-list">{program.zones.map((zone, index) => <ZoneRow key={zone.id} zone={zone} index={index}
-              classes={program.classes} defects={program.defect_classes} open={selected === zone.id} canEdit={canEdit}
+              classes={program.classes} defects={program.defect_classes} open={selected === zone.id} canEdit={!!editing}
               onOpen={() => setSelected(selected === zone.id ? null : zone.id)}
               onChange={update => updateZone(zone.id, update)} onRemove={() => removeZone(zone.id)} />)}</ul>
           </section>
@@ -290,9 +328,28 @@ export function ProgramEditor({ programId }: { programId: string }) {
             {!program.model_job_id && <p className="small muted">Choose a model first.</p>}
           </section>
 
-          <button type="button" className="btn block large" disabled={!ready} onClick={() => setTab('inspect')}>
-            Next: inspect a board <Icon name="arrow" /></button>
-        </> : <InspectPanel program={program} ready={ready} busy={busy === 'inspect'} run={run} onInspect={image => void inspect(image)} />}
+          {canPublish && <section className="card side-card">
+            <h3><span><Icon name="flag" /> Publish program</span></h3>
+            <p className="small muted">Test the draft on a reference photo before publishing it for inspections.</p>
+            <button type="button" className="btn" disabled={!ready || !!busy || saving || (!dirty && program.revision === program.published_revision)}
+              onClick={() => void activate('publish')}>{busy === 'publish' ? 'Publishing…' : 'Publish draft'}</button>
+            {versions.some(revision => revision !== program.published_revision) && <div className="row">
+              <select className="input" aria-label="Revision to restore" value={rollbackRevision}
+                disabled={!!busy || saving} onChange={event => setRollbackRevision(event.target.value)}>
+                <option value="">Choose a published revision</option>
+                {versions.filter(revision => revision !== program.published_revision).map(revision =>
+                  <option key={revision} value={revision}>Revision {revision}</option>)}
+              </select>
+              <button type="button" className="btn ghost" disabled={!rollbackRevision || !!busy || saving}
+                onClick={() => {
+                  if (window.confirm(`Make revision ${rollbackRevision} live?`)) void activate('rollback');
+                }}>Restore live revision</button>
+            </div>}
+          </section>}
+        </> : <DraftTestPanel ready={ready} busy={!!busy || saving} run={run} onInspect={image => void inspect(image)} />}
+        {canEdit && program.published_revision && <a className="btn ghost" href={`/operator/${program.id}`}>
+          <Icon name="camera" /> Open operator screen
+        </a>}
       </aside>
     </div>
   </main>;
@@ -349,15 +406,15 @@ function ZoneRow({ zone, index, classes, defects, open, canEdit, onOpen, onChang
 
 /* ---------- Inspect panel ---------- */
 
-function InspectPanel({ program, ready, busy, run, onInspect }: {
-  program: InspectionProgram; ready: boolean; busy: boolean; run: InspectionRun | null; onInspect: (image: Blob) => void;
+function DraftTestPanel({ ready, busy, run, onInspect }: {
+  ready: boolean; busy: boolean; run: InspectionRun | null; onInspect: (image: Blob) => void;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const [camera, setCamera] = useState(false);
-  if (!ready) return <div className="notice"><Icon name="info" /><span>Finish the setup first: choose a model, draw zones and capture the golden layout.</span></div>;
+  if (!ready) return <div className="notice"><Icon name="info" /><span>Choose a model, draw zones, and set expected counts to test the draft.</span></div>;
   return <>
     <section className="card side-card">
-      <h3><span><Icon name="camera" /> Check a board</span></h3>
+      <h3><span><Icon name="camera" /> Test a reference photo</span></h3>
       <div className="row">
         <button type="button" className="btn" disabled={busy} onClick={() => input.current?.click()}><Icon name="upload" /> {busy ? 'Inspecting…' : 'Upload photo'}</button>
         <button type="button" className="btn ghost" aria-pressed={camera} onClick={() => setCamera(value => !value)}><Icon name="camera" /> Camera</button>
@@ -368,17 +425,13 @@ function InspectPanel({ program, ready, busy, run, onInspect }: {
         event.target.value = '';
       }} />
       {camera && <CameraCapture busy={busy} demo={false} onCapture={onInspect} />}
-      <p className="small muted">Every result is saved in <a href="#/results">Results and review</a> with its photo.</p>
+      <p className="small muted">Draft tests stay out of inspection history.</p>
     </section>
     {run && <section className="card side-card result-card" aria-live="polite">
       <DecisionBadge decision={run.decision} large />
       <p className="small">{DECISION_INFO[run.decision].text}</p>
       <ZoneResultTable results={run.zone_results} />
-      <div className="row">
-        <a className="btn ghost small" href={`#/results/${run.id}`}><Icon name="eye" /> Open result</a>
-        {run.review_status === 'pending' && <span className="chip"><Icon name="flag" /> Sent to review</span>}
-      </div>
-      <p className="small muted">Confidence threshold {Math.round(program.confidence * 100)}%.</p>
+      <p className="small muted">Revision {run.program_snapshot?.revision} · Confidence threshold {Math.round(run.confidence * 100)}%.</p>
     </section>}
   </>;
 }
@@ -413,8 +466,8 @@ function ZoneCanvas({ src, program, drawing, selected, onSelect, onDraw, run }: 
       setDraft(null);
     }}
     onLostPointerCapture={() => setDraft(null)}>
-    <BoardOverlay src={src} zones={program.zones} results={run?.zone_results} detections={run?.detections}
-      labels={labels} confidence={program.confidence} selectedZone={selected} onZoneClick={drawing ? undefined : onSelect} />
+    <BoardOverlay src={src} zones={run?.program_snapshot?.zones.map(({ region, ...zone }) => ({ ...zone, ...region })) ?? program.zones} results={run?.zone_results} detections={run?.detections}
+      labels={run?.program_snapshot?.classes ?? labels} confidence={run?.confidence ?? program.confidence} selectedZone={selected} onZoneClick={drawing ? undefined : onSelect} />
     {draft && <div className="zone draft" style={{
       left: `${Math.min(draft.start.x, draft.end.x) * 100}%`, top: `${Math.min(draft.start.y, draft.end.y) * 100}%`,
       width: `${Math.abs(draft.end.x - draft.start.x) * 100}%`, height: `${Math.abs(draft.end.y - draft.start.y) * 100}%`,

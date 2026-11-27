@@ -247,42 +247,90 @@ function ImageTester({ labels, kindOf, views = [], check, demo = false }: {
   </div>;
 }
 
-export function CameraCapture({ busy, onCapture, demo }: { busy: boolean; onCapture: (image: Blob) => void; demo: boolean }) {
+export type CameraStatus = 'off' | 'starting' | 'ready' | 'error';
+
+export function CameraCapture({ busy, onCapture, demo, onStatus }: {
+  busy: boolean; onCapture: (image: Blob) => void; demo: boolean;
+  onStatus?: (status: CameraStatus) => void;
+}) {
   const video = useRef<HTMLVideoElement>(null);
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [deviceId, setDeviceId] = useState('');
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [error, setError] = useState('');
+  const [starting, setStarting] = useState(false);
+  const cameraRequest = useRef(0);
+  const activeStream = useRef<MediaStream | null>(null);
 
-  useEffect(() => () => stream?.getTracks().forEach(track => track.stop()), [stream]);
+  useEffect(() => () => {
+    cameraRequest.current += 1;
+    activeStream.current?.getTracks().forEach(track => track.stop());
+  }, []);
+
+  function stop() {
+    cameraRequest.current += 1;
+    activeStream.current?.getTracks().forEach(track => track.stop());
+    activeStream.current = null;
+    setStream(null);
+    setStarting(false);
+    onStatus?.('off');
+  }
 
   async function start(id = deviceId) {
     setError('');
-    stream?.getTracks().forEach(track => track.stop());
+    stop();
+    const request = cameraRequest.current;
     if (!navigator.mediaDevices?.getUserMedia) {
       setError('This browser cannot open cameras here. Use HTTPS or localhost.');
+      onStatus?.('error');
       return;
     }
+    setStarting(true);
+    onStatus?.('starting');
     try {
       const next = await navigator.mediaDevices.getUserMedia({
         video: id ? { deviceId: { exact: id }, width: { ideal: 1920 } } : { width: { ideal: 1920 } }, audio: false,
       });
+      if (request !== cameraRequest.current) {
+        next.getTracks().forEach(track => track.stop());
+        return;
+      }
+      activeStream.current = next;
       setStream(next);
+      next.getVideoTracks().forEach(track => track.addEventListener('ended', () => {
+        if (request !== cameraRequest.current) return;
+        stop();
+        onStatus?.('error');
+        setError('The camera disconnected. Reconnect it and try again.');
+      }));
       if (video.current) {
         video.current.srcObject = next;
         await video.current.play().catch(() => undefined);
       }
-      const all = await navigator.mediaDevices.enumerateDevices();
-      setDevices(all.filter(device => device.kind === 'videoinput'));
+      if (request !== cameraRequest.current) return;
+      onStatus?.('ready');
+      const all = await navigator.mediaDevices.enumerateDevices().catch(() => []);
+      if (request === cameraRequest.current) setDevices(all.filter(device => device.kind === 'videoinput'));
     } catch {
-      setError('Could not open the camera. Allow camera access in your browser and try again.');
+      if (request === cameraRequest.current) {
+        setError('Could not open the camera. Allow camera access in your browser and try again.');
+        onStatus?.('error');
+      }
+    } finally {
+      if (request === cameraRequest.current) setStarting(false);
     }
   }
 
   async function capture() {
     const element = video.current;
     if (!element || !element.videoWidth) return;
-    onCapture(await makeJpeg(element, element.videoWidth, element.videoHeight));
+    const request = cameraRequest.current;
+    try {
+      const image = await makeJpeg(element, element.videoWidth, element.videoHeight);
+      if (request === cameraRequest.current) onCapture(image);
+    } catch {
+      if (request === cameraRequest.current) setError('Could not capture a camera frame. Try again.');
+    }
   }
 
   return <div className="stack" style={{ gap: '.75rem' }}>
@@ -292,18 +340,18 @@ export function CameraCapture({ busy, onCapture, demo }: { busy: boolean; onCapt
         <Icon name="camera" />
         <strong>Live camera</strong>
         <span className="small">{demo ? 'Capture a frame with people or objects in view.' : 'Point the camera at a part, then capture a frame to check it.'}</span>
-        <button type="button" className="btn" onClick={() => void start()}><Icon name="play" /> Start camera</button>
+        <button type="button" className="btn" disabled={starting || busy} onClick={() => void start()}><Icon name="play" /> {starting ? 'Starting…' : 'Start camera'}</button>
       </div>}
     </div>
     {error && <ErrorBox message={error} />}
     {stream && <div className="row">
       <button type="button" className="btn" disabled={busy} onClick={() => void capture()}><Icon name="camera" /> {busy ? 'Checking…' : 'Capture and check'}</button>
-      {devices.length > 1 && <select className="input" style={{ width: 'auto' }} aria-label="Camera" value={deviceId}
+      {devices.length > 1 && <select className="input" style={{ width: 'auto' }} aria-label="Camera" disabled={busy} value={deviceId}
         onChange={event => { setDeviceId(event.target.value); void start(event.target.value); }}>
         <option value="">Default camera</option>
         {devices.map((device, index) => <option key={device.deviceId} value={device.deviceId}>{device.label || `Camera ${index + 1}`}</option>)}
       </select>}
-      <button type="button" className="btn ghost" onClick={() => { stream.getTracks().forEach(track => track.stop()); setStream(null); }}>
+      <button type="button" className="btn ghost" onClick={stop}>
         <Icon name="stop" /> Stop camera</button>
     </div>}
   </div>;

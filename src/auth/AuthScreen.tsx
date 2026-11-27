@@ -2,10 +2,12 @@ import { useState, type FormEvent } from 'react';
 
 import { ApiRequestError } from '../services/api/client';
 import { signIn, signUp } from '../services/api/auth';
-import { Icon, Logo } from '../ui/Icon';
+import { Icon, Logo, type IconName } from '../ui/Icon';
+import { authHref, navigate } from '../ui/navigation';
 
 type Props = {
   mode: 'login' | 'signup';
+  next: string;
   status: 'loading' | 'anonymous' | 'unavailable';
   onSignedIn: () => void;
   onRetry: () => void;
@@ -22,7 +24,14 @@ function strength(password: string) {
   return password.length < MIN_PASSWORD ? Math.min(score, 1) : score;
 }
 
-export function AuthScreen({ mode, status, onSignedIn, onRetry }: Props) {
+const FEATURES: { icon: IconName; title: string; description: string }[] = [
+  { icon: 'layers', title: 'Projects and model training', description: 'Organize photos, label examples, and test model versions.' },
+  { icon: 'camera', title: 'Inspection programs', description: 'Publish checks and run them from a camera or an uploaded photo.' },
+  { icon: 'flag', title: 'Results and review', description: 'Review flagged items, keep a history, and export results.' },
+  { icon: 'team', title: 'Team workspaces', description: 'Invite teammates and assign roles for shared work.' },
+];
+
+export function AuthScreen({ mode, next, status, onSignedIn, onRetry }: Props) {
   const signup = mode === 'signup';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -55,11 +64,10 @@ export function AuthScreen({ mode, status, onSignedIn, onRetry }: Props) {
         setCreated(true);
       }
       await signIn(email.trim(), password);
-      window.history.replaceState(null, '', '/#/');
       onSignedIn();
     } catch (cause) {
       if (accountCreated) {
-        window.location.hash = '#login';
+        navigate(authHref('login', next), true);
         setError('Your account was created, but we could not sign you in. Log in to continue.');
       } else if (cause instanceof ApiRequestError && [401, 403, 409, 422, 429, 503].includes(cause.status)) {
         setError(cause.message);
@@ -73,33 +81,29 @@ export function AuthScreen({ mode, status, onSignedIn, onRetry }: Props) {
 
   return <main className="auth">
     <aside className="auth-brand">
-      <a className="brand" href="#login"><Logo /> Vision Studio</a>
+      <a className="brand" href="/"><Logo /> Vision Studio</a>
       <div className="auth-pitch">
-        <h2>Teach a camera to check your work.</h2>
-        <p>Upload photos, draw boxes around what matters, and train your own detection model. No machine learning experience needed.</p>
-        <ol className="auth-steps">
-          {['Upload photos of your parts', 'Label what to find', 'Train with one click', 'Test and use the model'].map((text, index) =>
-            <li key={text}><span className="num">{index + 1}</span>{text}</li>)}
-        </ol>
+        <h2>A workspace for visual inspection</h2>
+        <p>Set up checks, run them with your team, and track what happens over time.</p>
       </div>
-      <div className="auth-preview" aria-hidden="true">
-        <div className="frame">
-          <span style={{ left: '12%', top: '24%', width: '26%', height: '44%' }}><b>Helmet</b></span>
-          <span style={{ left: '52%', top: '34%', width: '30%', height: '52%' }}><b>Vest</b></span>
-        </div>
-        <footer><span>2 objects found</span><span className="chip dark"><Icon name="check" /> PASS</span></footer>
-      </div>
+      <ul className="auth-features">
+        {FEATURES.map(feature => <li key={feature.title}>
+          <span className="workspace-icon"><Icon name={feature.icon} /></span>
+          <div><strong>{feature.title}</strong><p>{feature.description}</p></div>
+        </li>)}
+      </ul>
+      <p className="auth-module-note"><Icon name="target" /> Object detection is the first available inspection tool.</p>
     </aside>
 
     <section className="auth-main">
       <div className="auth-card">
         <header>
           <h1>{signup ? 'Create your account' : 'Welcome back'}</h1>
-          <p>{signup ? 'Set up a workspace for your team in under a minute.' : 'Log in to continue to your projects.'}</p>
+          <p>{signup ? 'Create a workspace to manage inspections with your team.' : 'Log in to continue to your workspace.'}</p>
         </header>
         <nav className="auth-tabs" aria-label="Account">
-          <a href="#login" aria-current={!signup ? 'page' : undefined}>Log in</a>
-          <a href="#signup" aria-current={signup ? 'page' : undefined}>Sign up</a>
+          <a href={authHref('login', next)} aria-current={!signup ? 'page' : undefined}>Log in</a>
+          <a href={authHref('signup', next)} aria-current={signup ? 'page' : undefined}>Sign up</a>
         </nav>
 
         {status === 'loading' && <div className="loading" role="status"><span className="spinner" />Checking your session…</div>}
@@ -144,14 +148,15 @@ export function AuthScreen({ mode, status, onSignedIn, onRetry }: Props) {
               <input type={show ? 'text' : 'password'} required maxLength={128} minLength={MIN_PASSWORD}
                 autoComplete="new-password" value={confirm} onChange={event => setConfirm(event.target.value)} /></span>
           </label>}
+          {!signup && <a href={authHref('forgot', next)}>Forgot your password?</a>}
           {error && <div className="alert" role="alert"><Icon name="alert" />{error}</div>}
           <button type="submit" className="btn block large" disabled={busy}>
             {busy ? <><span className="spinner" aria-hidden="true" />{signup ? 'Creating account…' : 'Logging in…'}</>
               : <>{signup ? 'Create account' : 'Log in'} <Icon name="arrow" /></>}
           </button>
           <p className="auth-foot">{signup
-            ? <>Already have an account? <a href="#login">Log in</a></>
-            : <>New to Vision Studio? <a href="#signup">Create an account</a></>}</p>
+            ? <>Already have an account? <a href={authHref('login', next)}>Log in</a></>
+            : <>New to Vision Studio? <a href={authHref('signup', next)}>Create an account</a></>}</p>
         </form>}
       </div>
     </section>

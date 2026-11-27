@@ -25,7 +25,7 @@ export function PhotoReadiness({ project, fixHref }: { project: Project; fixHref
   const thin = project.labels.filter(label => (project.labelCounts[label] ?? 0) < MIN_PHOTOS_PER_CLASS);
 
   return <section className="train-part">
-    <PartTitle n={1} icon="image" title="Your photos" />
+    <h2>Your photos</h2>
     <div className="stat-tiles">
       <Tile icon="image" value={String(total)} label="Photos" state={total >= 4 ? 'ok' : 'bad'} hint={total < 4 ? 'Need 4+' : undefined} />
       <Tile icon="tag" value={`${labeled}/${total}`} label="Labeled" state={labeled === total && total ? 'ok' : 'bad'}
@@ -52,108 +52,18 @@ export function PhotoReadiness({ project, fixHref }: { project: Project; fixHref
   </section>;
 }
 
-export function PartTitle({ n, icon, title }: { n: number; icon: IconName; title: string }) {
-  return <h2 className="part-title"><span className="pt-n">{n}</span><Icon name={icon} />{title}</h2>;
-}
-
-/** Part 2: a drawing of what training does. Photos → study / check → model → score. */
-export function TrainingDiagram() {
-  return <section className="train-part">
-    <PartTitle n={2} icon="help" title="What happens" />
-    <svg className="train-diagram" viewBox="0 0 770 210" role="img"
-      aria-label="Your photos are split: most are studied by the model, some are kept to check it. Then you get a score.">
-      <defs>
-        <marker id="td-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
-          <path d="M0 0 10 5 0 10z" className="td-head" />
-        </marker>
-        <marker id="td-arrow-sm" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="3.5" markerHeight="3.5" orient="auto">
-          <path d="M0 0 10 5 0 10z" className="td-head light" />
-        </marker>
-      </defs>
-      {/* Photo stack */}
-      <g transform="translate(20 55)">
-        {[16, 8, 0].map(offset => <g key={offset} transform={`translate(${offset} ${-offset})`}>
-          <rect className="td-photo" width="96" height="72" rx="8" />
-          <circle className="td-part" cx="48" cy="38" r="15" />
-          <rect className="td-box" x="29" y="19" width="38" height="38" rx="3" />
-        </g>)}
-        <text className="td-label" x="56" y="110" textAnchor="middle">Your photos</text>
-      </g>
-      {/* Split */}
-      <path className="td-line" d="M150 90 C 190 90, 190 50, 228 50" markerEnd="url(#td-arrow)" />
-      <path className="td-line" d="M150 100 C 190 100, 190 150, 228 150" markerEnd="url(#td-arrow)" />
-      <g transform="translate(236 18)">
-        <rect className="td-pile study" width="120" height="62" rx="12" />
-        <text className="td-big" x="60" y="30" textAnchor="middle">70%</text>
-        <text className="td-small" x="60" y="49" textAnchor="middle">to study</text>
-      </g>
-      <g transform="translate(236 118)">
-        <rect className="td-pile check" width="120" height="62" rx="12" />
-        <text className="td-big" x="60" y="30" textAnchor="middle">30%</text>
-        <text className="td-small" x="60" y="49" textAnchor="middle">kept to check</text>
-      </g>
-      {/* Model */}
-      <path className="td-line" d="M360 49 C 400 49, 400 95, 436 95" markerEnd="url(#td-arrow)" />
-      <g transform="translate(440 50)">
-        <rect className="td-model" width="128" height="92" rx="18" />
-        <path className="td-loop" d="M50 40 a16 16 0 1 1 16 16" markerEnd="url(#td-arrow-sm)" />
-        <text className="td-small light" x="64" y="80" textAnchor="middle">learns</text>
-        <text className="td-label" x="64" y="-8" textAnchor="middle">Your model</text>
-      </g>
-      {/* Check → score */}
-      <path className="td-line dashed" d="M360 150 C 470 150, 520 175, 600 150" markerEnd="url(#td-arrow)" />
-      <path className="td-line" d="M572 96 L 604 96" markerEnd="url(#td-arrow)" />
-      <g transform="translate(612 40)">
-        <rect className="td-photo" width="140" height="112" rx="14" />
-        <text className="td-label" x="70" y="26" textAnchor="middle">Score</text>
-        {['Low', 'OK', 'Good', 'Great'].map((label, index) => <g key={label} transform={`translate(14 ${38 + index * 17})`}>
-          <rect className={`td-band b${index}`} width={20 + index * 16} height="12" rx="6" />
-          <text className="td-tiny" x={26 + index * 16} y="10">{label}</text>
-        </g>)}
-      </g>
-    </svg>
-  </section>;
-}
-
-/** A small speedometer drawing. `level` 1 (slow, best) to 3 (fast). */
-function Gauge({ level }: { level: number }) {
-  const angle = -150 + level * 75; // -75°, 0°, 75°
-  return <svg className="gauge" viewBox="0 0 100 60" aria-hidden="true">
-    <path className="g-track" d="M10 55 A40 40 0 0 1 90 55" />
-    <path className="g-fill" d="M10 55 A40 40 0 0 1 90 55" pathLength={100} strokeDasharray={`${level * 33.3} 100`} />
-    <line className="g-needle" x1="50" y1="55" x2="50" y2="22" transform={`rotate(${angle} 50 55)`} />
-    <circle className="g-hub" cx="50" cy="55" r="5" />
-  </svg>;
-}
-
-const PRESET_VIEW: Record<Preset, { speed: number; quality: number; time: string }> = {
-  fast: { speed: 3, quality: 1, time: 'Minutes' },
-  balanced: { speed: 2, quality: 2, time: 'About 3× longer' },
-  accurate: { speed: 1, quality: 3, time: 'Longest' },
-};
-
-function Meter({ icon, label, value }: { icon: IconName; label: string; value: number }) {
-  return <span className="meter"><Icon name={icon} /><span>{label}</span>
-    <span className="m-dots">{[1, 2, 3].map(dot => <i key={dot} className={dot <= value ? 'on' : ''} />)}</span></span>;
-}
-
-/** Part 3: choose speed vs quality with three picture cards. */
 export function SpeedPicker({ preset, onChoose }: { preset: Preset; onChoose: (preset: Preset) => void }) {
-  return <section className="train-part">
-    <PartTitle n={3} icon="bolt" title="Pick a speed" />
-    <div className="presets" role="radiogroup" aria-label="Training speed">
+  return <section className="train-part preset-picker">
+    <h2>Training preset</h2>
+    <div className="presets" role="radiogroup" aria-label="Training preset">
       {(Object.keys(PRESETS) as Preset[]).map(key => {
         const item = PRESETS[key];
-        const view = PRESET_VIEW[key];
-        return <label key={key} className="preset visual">
+        return <label key={key} className="preset-option">
           <input type="radio" name="preset" checked={preset === key} onChange={() => onChoose(key)} />
-          {key === 'balanced' && <span className="ribbon">Recommended</span>}
-          <span className="tick"><Icon name="check" /></span>
-          <Gauge level={view.speed} />
+          <span className="workspace-icon"><Icon name={item.icon} /></span>
           <strong>{item.name}</strong>
-          <Meter icon="clock" label="Speed" value={view.speed} />
-          <Meter icon="target" label="Quality" value={view.quality} />
-          <span className="best-for"><Icon name="lightbulb" /> {item.bestFor}</span>
+          <small>{item.sub}</small>
+          <span className="small muted">{item.values.epochs} passes · {item.values.imgsz} px</span>
         </label>;
       })}
     </div>

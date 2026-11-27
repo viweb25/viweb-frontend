@@ -1,3 +1,4 @@
+import { navigate } from './ui/navigation';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { useSession } from './context/SessionContext';
@@ -8,6 +9,7 @@ import { Inspect } from './pages/Inspect';
 import { ProjectStudio } from './pages/ProjectStudio';
 import { Team } from './pages/Team';
 import { AppShell, ModulePage } from './pages/detection/AppShell';
+import { OperatorPage } from './pages/detection/OperatorPage';
 import { GuidePage } from './pages/detection/GuidePage';
 import { ProgramEditor } from './pages/detection/ProgramEditor';
 import { ProgramsPage } from './pages/detection/ProgramsPage';
@@ -17,7 +19,7 @@ import { initials, useRoute, type ShellPage } from './ui/common';
 
 const TITLES: Record<ShellPage, string> = {
   home: 'Home', projects: 'Projects', guide: 'Getting started', programs: 'Inspection programs', program: 'Inspection program',
-  results: 'Results and review', inspect: 'Quick check', team: 'Workspace', module: 'Module',
+  results: 'Results and review', operator: 'Run inspection', inspect: 'Quick check', team: 'Workspace', module: 'Module',
 };
 
 export function App() {
@@ -53,7 +55,7 @@ export function App() {
         <main className="page narrow"><div className="empty">
           <span className="bubble"><Icon name="lock" /></span>
           <h2>This project is not in your workspaces</h2>
-          <a className="btn" href="#/projects">Back to projects</a>
+          <a className="btn" href="/projects">Back to projects</a>
         </div></main>
       </>;
     }
@@ -61,12 +63,13 @@ export function App() {
     return <ProjectStudio key={`${route.org}/${route.dataset}`} orgId={route.org} datasetId={route.dataset} step={route.step} />;
   }
 
-  return <AppShell page={route.page} moduleKey={route.page === 'module' ? route.key : undefined} orgId={org.org_id}>
-    {route.page === 'home' && <Home />}
+  return <AppShell page={route.page} orgId={org.org_id}>
+    {route.page === 'home' && <Home key={org.org_id} />}
     {route.page === 'projects' && <Dashboard key={org.org_id} />}
     {route.page === 'guide' && <GuidePage />}
     {route.page === 'programs' && <ProgramsPage key={org.org_id} />}
     {route.page === 'program' && <ProgramEditor key={`${org.org_id}/${route.id}`} programId={route.id} />}
+    {route.page === 'operator' && <OperatorPage key={org.org_id} programId={route.program} />}
     {route.page === 'results' && <ResultsPage key={org.org_id} runId={route.run} />}
     {route.page === 'inspect' && <Inspect key={org.org_id} />}
     {route.page === 'team' && <Team key={org.org_id} />}
@@ -77,7 +80,7 @@ export function App() {
 export function Topbar({ children, right, compact }: { children?: ReactNode; right?: ReactNode; compact?: boolean }) {
   return <header className={`topbar${compact ? ' compact' : ''}`}>
     <div className="topbar-inner">
-      <a className="brand" href="#/" aria-label="Vision Studio home"><Logo /> <span className="brand-text">Vision Studio</span></a>
+      <a className="brand" href="/" aria-label="Vision Studio home"><Logo /> <span className="brand-text">Vision Studio</span></a>
       {children}
       <span className="spacer" />
       {right}
@@ -118,7 +121,7 @@ function UserMenu() {
           className={item.org_id === org?.org_id ? 'current' : ''}
           onClick={() => {
             select(item.org_id);
-            window.location.hash = '#/';
+            navigate('/');
             if (ref.current) ref.current.open = false;
           }}>
           <span className="avatar soft">{initials(item.name)}</span>
@@ -126,7 +129,7 @@ function UserMenu() {
           {item.org_id === org?.org_id && <Icon name="check" />}
         </button>)}
       </>}
-      <a href="#/team" onClick={() => { if (ref.current) ref.current.open = false; }}><Icon name="team" /> Workspace and team</a>
+      <a href="/team" onClick={() => { if (ref.current) ref.current.open = false; }}><Icon name="team" /> Workspace and team</a>
       <button type="button" disabled={busy} onClick={async () => {
         setBusy(true);
         setError(false);

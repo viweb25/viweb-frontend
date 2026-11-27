@@ -59,10 +59,37 @@ Camera access requires HTTPS or localhost.
 | Area | Where to change it |
 | --- | --- |
 | Sign in / sign up | `src/auth/AuthScreen.tsx`, session in `src/context/SessionContext.tsx` |
-| Top bar, routing, account menu | `src/App.tsx`, routes in `src/ui/common.tsx` (`#/`, `#/inspect`, `#/team`, `#/projects/<org>/<project>/<step>`) |
+| Top bar, routing, account menu | `src/App.tsx`, routes in `src/ui/common.tsx` (`/`, `/inspect`, `/team`, `/projects/<org>/<project>/<step>`) |
 | Projects dashboard | `src/pages/Dashboard.tsx` |
 | Project state, autosave, stepper | `src/pages/ProjectStudio.tsx` |
 | Steps | `src/pages/steps/{Upload,Label,Train,Test,Use}Step.tsx` |
 | Model testing and camera | `src/pages/ModelTester.tsx`, `src/pages/Inspect.tsx` |
 | Workspace and team | `src/pages/Team.tsx`, current workspace in `src/context/WorkspaceContext.tsx` |
 | Design system (light orange, white, black text) | `src/theme.css`, icons in `src/ui/Icon.tsx` |
+
+
+## Browser smoke test
+
+Check out `viweb-frontend`, `viweb-ai`, and `viweb-db` side by side. With Node 22 and
+Docker Compose available, run these from `viweb-frontend`.
+
+```bash
+npm ci
+npm exec -- playwright install chromium
+npm run test:e2e
+```
+
+The test builds the business API and applies the database migrations from the sibling
+checkouts. It starts a temporary PostgreSQL instance, uses deterministic HTTP inference,
+and verifies sign-in, operator inspection, saved review, and workspace isolation.
+The test project and its volumes are removed on exit. It uses loopback ports 3100
+(web) and 8100 (API), which can be changed with `VIWEB_SMOKE_WEB_PORT` and
+`VIWEB_SMOKE_API_PORT`. A local Chromium executable can be selected with
+`PLAYWRIGHT_CHROMIUM_EXECUTABLE`.
+
+The frontend CI browser job tests the default `main` refs of the API and database.
+Use **Run workflow** with `api_ref` and `db_ref` to test coordinated changes before
+they merge. For private sibling repositories, set the frontend repository's
+`VIWEB_CI_READ_TOKEN` secret to a token with read-only Contents access to those two
+repositories. The job runs for branches in this repository. Fork pull requests run
+the regular frontend build.

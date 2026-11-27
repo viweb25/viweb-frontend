@@ -8,8 +8,8 @@ import {
   ErrorBox, Loading, QUALITY, errorText, percent, projectHref, qualityBand, qualityPosition, useToast,
 } from '../../ui/common';
 import { MIN_PHOTOS_PER_CLASS, MIN_PHOTOS_TO_TRAIN, type Project } from '../project/useProject';
-import { PhaseSteps, PhotoReadiness, SpeedPicker, TrainingDiagram } from './train/TrainParts';
-import { AdvancedSettings, isCustomized, optionsFor, optionsProblem, type Preset } from './train/AdvancedSettings';
+import { PhaseSteps, PhotoReadiness, SpeedPicker } from './train/TrainParts';
+import { AdvancedSettings, RunSettings, isCustomized, optionsFor, optionsProblem, type Preset } from './train/AdvancedSettings';
 
 const POLL_ACTIVE_MS = 3000;
 const MODEL_SIZE = { n: 'Nano', s: 'Small', m: 'Medium', l: 'Large', x: 'Extra large' } as const;
@@ -57,11 +57,11 @@ export function TrainStep({ project, orgId, datasetId, onModelsChanged }: {
 
   const showRun = job && (active || !setupNew);
 
-  return <main className="page narrow">
+  return <main className="page workspace-page train-workspace">
     {statusError && <div className="notice" role="status"><Icon name="info" />{statusError}</div>}
     {showRun ? <RunView job={job} project={project} orgId={orgId} datasetId={datasetId}
       onChanged={() => setPoll(value => value + 1)} onNewRun={() => setSetupNew(true)} />
-      : <SetupView project={project} orgId={orgId} datasetId={datasetId} onStarted={started => {
+      : <SetupView project={project} orgId={orgId} datasetId={datasetId} previousOptions={job?.options} onStarted={started => {
         setJob(started);
         setSetupNew(false);
         setPoll(value => value + 1);
@@ -71,10 +71,11 @@ export function TrainStep({ project, orgId, datasetId, onModelsChanged }: {
 
 /* ---------------- Setup ---------------- */
 
-function SetupView({ project, orgId, datasetId, onStarted }: {
+function SetupView({ project, orgId, datasetId, previousOptions, onStarted }: {
   project: Project;
   orgId: string;
   datasetId: string;
+  previousOptions?: TrainingOptions | null;
   onStarted: (job: TrainingJob) => void;
 }) {
   const [preset, setPreset] = useState<Preset>('balanced');
@@ -99,10 +100,7 @@ function SetupView({ project, orgId, datasetId, onStarted }: {
     if (starting || blocked || !project.canEdit) return;
     const problem = optionsProblem(options);
     setError(problem);
-    if (problem) {
-      setAdvanced(true);
-      return;
-    }
+    if (problem) return;
     setStarting(true);
     try {
       const revision = project.dirty || !project.revision ? await project.save() : project.revision;
@@ -116,32 +114,51 @@ function SetupView({ project, orgId, datasetId, onStarted }: {
     }
   }
 
+  const validSplit = Number.isFinite(options.validation_percent) && Number.isFinite(options.test_percent)
+    && options.validation_percent + options.test_percent <= 50;
   return <>
-    <header className="page-head center">
-      <span className="eyebrow"><Icon name="play" /> Step 4 of 6</span>
-      <h1 style={{ fontSize: 'clamp(2rem, 4vw, 3rem)' }}>Train your model</h1>
-      <p>Orange means “do this first”. Tap it to fix.</p>
+    <header className="page-head">
+      <div><h1>Configure training</h1><p>Choose how the model learns and which photos to save for checking it.</p></div>
+      {previousOptions && <button type="button" className="btn ghost" disabled={starting || !project.canEdit} onClick={() => {
+        const savedPreset = previousOptions.preset;
+        const nextPreset = savedPreset === 'fast' || savedPreset === 'accurate' ? savedPreset : 'balanced';
+        setPreset(nextPreset);
+        setOptions({ ...optionsFor(nextPreset), ...previousOptions, version_name: '', notes: '' });
+      }}><Icon name="copy" /> Use last run’s settings</button>}
     </header>
 
-    <ReadyChecklist project={project} orgId={orgId} datasetId={datasetId} />
-    <PhotoReadiness project={project} fixHref={projectHref(orgId, datasetId,
-      project.photos.length < MIN_PHOTOS_TO_TRAIN ? 'upload' : !project.labels.length ? 'detect' : 'label')} />
-    <TrainingDiagram />
-    <SpeedPicker preset={preset} onChoose={choose} />
-
-    {error && <ErrorBox message={error} />}
-    {project.canEdit ? <button type="button" className="btn large block" disabled={starting || !!blocked} onClick={() => void start()}>
-      {starting ? <><span className="spinner" /> {project.saving ? 'Saving your labels…' : 'Starting…'}</> : <><Icon name="play" /> Start training</>}
-    </button> : <div className="notice"><Icon name="lock" />You have view-only access, so you cannot start training.</div>}
-    <p className="center-note"><Icon name="info" /> You can close this page. Training keeps going.</p>
-
-    <div className="advanced-toggle">
-      <button type="button" className="btn link" aria-expanded={advanced} onClick={() => setAdvanced(value => !value)}>
-        <Icon name="sliders" /> Expert settings <Icon name={advanced ? 'chevronDown' : 'chevron'} />
-      </button>
+    <div className="workspace-columns train-columns">
+      <fieldset className="stack training-controls" disabled={starting || !project.canEdit}>
+        <section className="card workspace-panel"><SpeedPicker preset={preset} onChoose={choose} /></section>
+        <RunSettings options={options} set={set} />
+        <button type="button" className="btn ghost" aria-expanded={advanced} onClick={() => setAdvanced(value => !value)}>
+          <Icon name="sliders" /> {advanced ? 'Hide expert settings' : 'Show expert settings'} <Icon name={advanced ? 'chevronDown' : 'chevron'} />
+        </button>
+        {advanced && <AdvancedSettings options={options} set={set} labels={project.labels} customized={customized}
+          onReset={() => choose(preset)} />}
+      </fieldset>
+      <aside className="stack">
+        <section className="card workspace-panel training-summary">
+          <div className="row"><h2 className="spacer">Run summary</h2>
+            <span className="chip plain">{customized ? 'Custom settings' : 'Preset settings'}</span></div>
+          <dl className="workspace-list">
+            <div><dt>Reviewed photos</dt><dd>{project.reviewed} of {project.photos.length}</dd></div>
+            <div><dt>Labels</dt><dd>{project.labels.length}</dd></div>
+            {validSplit && <div><dt>Train / validate / test</dt>
+              <dd>{100 - options.validation_percent - options.test_percent}% / {options.validation_percent}% / {options.test_percent}%</dd></div>}
+          </dl>
+          {blocked && <div className="notice"><Icon name="info" /> {blocked}</div>}
+          {error && <ErrorBox message={error} />}
+          {project.canEdit ? <button type="button" className="btn dark large block" disabled={starting || !!blocked} onClick={() => void start()}>
+            {starting ? <><span className="spinner" /> {project.saving ? 'Saving your labels…' : 'Starting…'}</> : <><Icon name="play" /> Start training</>}
+          </button> : <div className="notice"><Icon name="lock" /> You have view-only access.</div>}
+          <p className="small muted">You can close this page while training runs.</p>
+        </section>
+        <ReadyChecklist project={project} orgId={orgId} datasetId={datasetId} />
+        <PhotoReadiness project={project} fixHref={projectHref(orgId, datasetId,
+          project.photos.length < MIN_PHOTOS_TO_TRAIN ? 'upload' : !project.labels.length ? 'detect' : 'label')} />
+      </aside>
     </div>
-    {advanced && <AdvancedSettings options={options} set={set} labels={project.labels} customized={customized}
-      onReset={() => choose(preset)} />}
   </>;
 }
 

@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useWorkspace } from '../../context/WorkspaceContext';
 import { listPrograms, type ProgramSummary } from '../../services/api/inspectionPrograms';
 import { listTrainingDatasets, type ProjectSummary } from '../../services/api/trainingDatasets';
+import { LabelExample } from '../../ui/LabelExample';
 import { Icon, type IconName } from '../../ui/Icon';
 import { projectHref, type Step } from '../../ui/common';
 import { CreateProject } from '../Dashboard';
@@ -27,10 +28,11 @@ const FLOW: { key: string; art: ReactNode; title: string; hint: string; step?: S
 ];
 
 const TOOLS: { icon: IconName; title: string; hint: string; href: string }[] = [
-  { icon: 'grid', title: 'Projects', hint: 'Teach models', href: '#/projects' },
-  { icon: 'layers', title: 'Inspection programs', hint: 'Zones and rules', href: '#/programs' },
-  { icon: 'flag', title: 'Results', hint: 'Review checks', href: '#/results' },
-  { icon: 'inspect', title: 'Quick check', hint: 'Try any photo', href: '#/inspect' },
+  { icon: 'grid', title: 'Projects', hint: 'Teach models', href: '/projects' },
+  { icon: 'layers', title: 'Inspection programs', hint: 'Zones and rules', href: '/programs' },
+  { icon: 'camera', title: 'Run inspection', hint: 'Check a board', href: '/operator' },
+  { icon: 'flag', title: 'Results', hint: 'Review checks', href: '/results' },
+  { icon: 'inspect', title: 'Quick check', hint: 'Try any photo', href: '/inspect' },
 ];
 
 /** The project the user is most likely working on: most progress, then most recent. */
@@ -58,15 +60,14 @@ export function GuidePage() {
   const nextIndex = data ? states.findIndex(done => !done) : -1;
   const next = nextIndex >= 0 ? FLOW[nextIndex] : undefined;
   const continueHref = project && next
-    ? next.step ? projectHref(orgId, project.id, next.step) : '#/programs'
-    : '#/results';
+    ? next.step ? projectHref(orgId, project.id, next.step) : '/programs'
+    : '/results';
 
-  return <main className="page gs">
-    <header className="gs-head">
-      <span className="gs-head-icon"><Icon name="target" /></span>
+  return <main className="page workspace-page">
+    <header className="page-head">
       <div>
-        <h1>Object detection</h1>
-        <p>Teach it once. It checks every board.</p>
+        <h1>Getting started</h1>
+        <p>Turn your photos into a repeatable inspection.</p>
       </div>
     </header>
 
@@ -94,13 +95,15 @@ export function GuidePage() {
       {project && next && <span className="muted small">in “{project.part_name}”</span>}
     </div>}
 
-    <section className="gs-tools" aria-label="Tools">
+    <div className="workspace-columns"><section className="gs-tools" aria-label="Tools">
       {TOOLS.map(tool => <a key={tool.href} className="gs-tool" href={tool.href}>
         <span className="gs-tool-icon"><Icon name={tool.icon} /></span>
         <span><strong>{tool.title}</strong><small>{tool.hint}</small></span>
         <Icon name="chevron" />
       </a>)}
     </section>
+
+    <LabelExample /></div>
 
     {creating && canEdit && <CreateProject orgId={orgId} onClose={() => setCreating(false)} />}
   </main>;

@@ -16,7 +16,7 @@ import { UseStep } from './steps/UseStep';
 const STEP_INFO: Record<Step, { label: string; icon: IconName; tip: string }> = {
   detect: { label: 'Set up', icon: 'sliders', tip: 'Name the project and what to find, good or bad' },
   upload: { label: 'Photos', icon: 'camera', tip: 'Add photos like the ones your camera will see' },
-  label: { label: 'Mark', icon: 'box', tip: 'Draw a box around each thing in each photo' },
+  label: { label: 'Label', icon: 'box', tip: 'Draw a box around each thing in each photo' },
   train: { label: 'Train', icon: 'play', tip: 'Let the model learn from your boxes' },
   test: { label: 'Test', icon: 'inspect', tip: 'Try the model on new photos' },
   use: { label: 'Use', icon: 'rocket', tip: 'Download the model or inspect parts' },
@@ -64,7 +64,7 @@ export function ProjectStudio({ orgId, datasetId, step }: { orgId: string; datas
   return <>
     <Topbar right={<SaveState project={project} />} compact>
       <div className="crumb">
-        <a href="#/projects"><Icon name="back" /><span className="lbl-hide">Projects</span></a>
+        <a href="/projects"><Icon name="back" /><span className="lbl-hide">Projects</span></a>
         <span aria-hidden="true">/</span>
         <strong title={project.name}>{project.name || '…'}</strong>
       </div>

@@ -4,14 +4,17 @@ import { useWorkspace } from '../context/WorkspaceContext';
 import { listCompletedJobs, listTrainingDatasets, type ProjectSummary, type TrainingJob } from '../services/api/trainingDatasets';
 import { Icon } from '../ui/Icon';
 import { ErrorBox, Loading, errorText, projectHref } from '../ui/common';
+import { useLocation } from '../ui/navigation';
 import { DemoTester, ModelTester, versionName } from './ModelTester';
 
-function requestedProject() {
-  return new URLSearchParams(window.location.hash.split('?')[1] ?? '').get('project') ?? '';
+export function Inspect() {
+  const { searchParams } = new URL(useLocation(), window.location.origin);
+  const project = searchParams.get('project') ?? '';
+  return <InspectionWorkspace key={project} initialProject={project} />;
 }
 
-export function Inspect() {
-  const [mode, setMode] = useState<'demo' | 'trained'>(() => requestedProject() ? 'trained' : 'demo');
+function InspectionWorkspace({ initialProject }: { initialProject: string }) {
+  const [mode, setMode] = useState<'demo' | 'trained'>(() => initialProject ? 'trained' : 'demo');
 
   return <main className="page wide">
     <header className="page-head">
@@ -26,15 +29,15 @@ export function Inspect() {
         <button type="button" aria-pressed={mode === 'trained'} onClick={() => setMode('trained')}>Your trained models</button>
       </div>
     </header>
-    {mode === 'demo' ? <DemoTester /> : <TrainedModels />}
+    {mode === 'demo' ? <DemoTester /> : <TrainedModels initialProject={initialProject} />}
   </main>;
 }
 
-function TrainedModels() {
+function TrainedModels({ initialProject }: { initialProject: string }) {
   const { org } = useWorkspace();
   const orgId = org!.org_id;
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
-  const [projectId, setProjectId] = useState(requestedProject);
+  const [projectId, setProjectId] = useState(initialProject);
   const [models, setModels] = useState<TrainingJob[] | null>(null);
   const [modelId, setModelId] = useState('');
   const [error, setError] = useState('');
@@ -87,7 +90,7 @@ function TrainedModels() {
       <span className="bubble"><Icon name="inspect" /></span>
       <h2>No trained models yet</h2>
       <p className="muted" style={{ maxWidth: '44ch' }}>Create a project, label your photos and train a model. It will appear here, ready to check new parts.</p>
-      <a className="btn" href="#/projects">Go to projects</a>
+      <a className="btn" href="/projects">Go to projects</a>
     </div>}
     {project && !models && <Loading label="Loading models…" />}
     {project && model && <>

@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 
 import { useSession } from '../context/SessionContext';
 import { useWorkspace } from '../context/WorkspaceContext';
-import { listWorkspaceMembers, type WorkspaceMember } from '../services/api/auth';
+import { listWorkspaceMembers, sendWorkspaceInvitation, type WorkspaceMember } from '../services/api/auth';
 import { Icon } from '../ui/Icon';
 import { ErrorBox, Loading, errorText, initials } from '../ui/common';
 
@@ -31,13 +31,12 @@ export function Team() {
     return () => controller.abort();
   }, [org, attempt]);
 
-  return <main className="page narrow">
+  return <main className="page workspace-page">
     <header className="page-head">
-      <div><span className="eyebrow">Workspace</span><h1 style={{ marginTop: '.3rem' }}>{org!.name}</h1>
-        <p>Your role: <strong>{org!.role}</strong> · {ROLE_TEXT[org!.role] ?? ''}</p></div>
+      <div><h1>Workspace and team</h1><p>{org!.name} · You are a {org!.role}.</p></div>
     </header>
 
-    <section className="card">
+    <div className="workspace-columns"><section className="card">
       <div className="card-head"><h2>Team members</h2>{members && <span className="chip plain">{members.length}</span>}</div>
       <div className="card-body">
         {error && <ErrorBox message={error} onRetry={() => setAttempt(value => value + 1)} />}
@@ -51,9 +50,11 @@ export function Team() {
             <span className={`chip ${member.role === 'owner' ? 'dark' : 'plain'}`}>{member.role}</span>
           </li>)}
         </ul>}
-        <p className="small muted" style={{ marginTop: '1rem' }}><Icon name="info" /> Inviting teammates from the app is not available yet. Your server administrator can add people to this workspace.</p>
       </div>
     </section>
+    {(org?.role === 'owner' || org?.role === 'admin') && <section className="card workspace-panel">
+      <InviteTeammate key={org.org_id} orgId={org.org_id} />
+    </section>}</div>
 
     {organisations.length > 1 && <section className="card">
       <div className="card-head"><h2>Your workspaces</h2></div>
@@ -80,4 +81,49 @@ export function Team() {
       </div>
     </section>
   </main>;
+}
+
+
+function InviteTeammate({ orgId }: { orgId: string }) {
+  const [email, setEmail] = useState('');
+  const [role, setRole] = useState<'operator' | 'viewer'>('operator');
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState('');
+  const [failed, setFailed] = useState(false);
+
+  async function invite(event: FormEvent) {
+    event.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setFeedback('');
+    setFailed(false);
+    try {
+      await sendWorkspaceInvitation(orgId, email.trim(), role);
+      setFeedback(`Invitation sent to ${email.trim()}.`);
+      setEmail('');
+    } catch (cause) {
+      setFailed(true);
+      setFeedback(errorText(cause, 'Could not send the invitation.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return <form className="auth-form" onSubmit={event => void invite(event)}>
+    <h3>Invite a teammate</h3>
+    <div className="row">
+      <label className="field">Email
+        <input type="email" required maxLength={254} value={email} disabled={busy}
+          onChange={event => setEmail(event.target.value)} />
+      </label>
+      <label className="field">Role
+        <select value={role} disabled={busy} onChange={event => setRole(event.target.value === 'viewer' ? 'viewer' : 'operator')}>
+          <option value="operator">Operator</option>
+          <option value="viewer">Viewer</option>
+        </select>
+      </label>
+    </div>
+    <button type="submit" className="btn" disabled={busy}>{busy ? 'Sending…' : 'Send invitation'}</button>
+    {feedback && (failed ? <ErrorBox message={feedback} /> : <p role="status">{feedback}</p>)}
+  </form>;
 }

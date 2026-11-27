@@ -51,7 +51,7 @@ export function UploadStep({ project, orgId, datasetId }: { project: Project; or
       <div>
         <span className="eyebrow"><Icon name="camera" /> Step 2 of 6</span>
         <h1 style={{ marginTop: '.3rem' }}>Add photos</h1>
-        <p>Good boards and bad boards. Same camera, same light.</p>
+        <p>Include examples of every label you want to teach. Keep the camera position consistent.</p>
       </div>
       {photos.length > 0 && <a className="btn" href={projectHref(orgId, datasetId, 'label')}>
         Next: Mark photos <Icon name="arrow" />
@@ -103,7 +103,7 @@ export function UploadStep({ project, orgId, datasetId }: { project: Project; or
           </li>)}
           <li>
             <span className="swatch" style={{ background: 'var(--line-2)' }} />
-            <span className="spacer"><b>Empty</b> <small>Nothing to find: empty belt, no board</small></span>
+            <span className="spacer"><b>Empty</b> <small>No labels in view</small></span>
             <span className="collect-target">2–5 photos</span>
           </li>
         </ul>
@@ -114,8 +114,8 @@ export function UploadStep({ project, orgId, datasetId }: { project: Project; or
       <a className="btn ghost small" href={projectHref(orgId, datasetId, 'detect')}>Set up</a></div>}
 
     <ul className="up-tips" aria-label="Photo tips">
-      <li><span className="up-tip-icon ok"><Icon name="check" /></span><b>Good boards</b><small>10–20 photos</small></li>
-      <li><span className="up-tip-icon bad"><Icon name="close" /></span><b>Bad boards</b><small>About the same</small></li>
+      <li><span className="up-tip-icon ok"><Icon name="check" /></span><b>Good examples</b><small>10–20 photos</small></li>
+      <li><span className="up-tip-icon bad"><Icon name="close" /></span><b>Problem examples</b><small>About the same</small></li>
       <li><span className="up-tip-icon"><Icon name="camera" /></span><b>Same camera</b><small>Same place, same light</small></li>
       <li><span className="up-tip-icon"><Icon name="inspect" /></span><b>Keep 5 aside</b><small>To test later</small></li>
     </ul>
@@ -143,7 +143,7 @@ export function UploadStep({ project, orgId, datasetId }: { project: Project; or
     </section>}
 
     {photos.length > 0 && <div className="step-actions">
-      <a className="btn ghost" href="#/projects"><Icon name="back" /> All projects</a>
+      <a className="btn ghost" href="/projects"><Icon name="back" /> All projects</a>
       <a className="btn" href={projectHref(orgId, datasetId, 'label')}>Next: Mark photos <Icon name="arrow" /></a>
     </div>}
   </main>;

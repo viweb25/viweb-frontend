@@ -1,7 +1,9 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 
+import { AccountLinkScreen, type AccountAction } from '../auth/AccountLinkScreen';
 import { AuthScreen } from '../auth/AuthScreen';
 import { ApiRequestError } from '../services/api/client';
+import { authHref, navigate, safeReturnTo, useAccountToken, useLocation } from '../ui/navigation';
 import { loadCurrentUser, signOut, type SignedInUser } from '../services/api/auth';
 
 const SessionContext = createContext<{
@@ -11,15 +13,19 @@ const SessionContext = createContext<{
 
 type SignInState = 'loading' | 'anonymous' | 'unavailable';
 
-function authMode(): 'login' | 'signup' {
-  return window.location.hash === '#signup' ? 'signup' : 'login';
-}
-
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<SignedInUser | null>(null);
   const [status, setStatus] = useState<SignInState>('loading');
   const [attempt, setAttempt] = useState(0);
-  const [mode, setMode] = useState(authMode);
+  const [pathname, search] = useLocation().split(/\?(.*)/s, 2);
+  const path = pathname.replace(/\/$/, '') || '/';
+  const mode = path === '/signup' ? 'signup' : 'login';
+  const onAuthPage = path === '/login' || path === '/signup';
+  const accountAction: AccountAction | null =
+    path === '/forgot' ? 'forgot' : path === '/reset' ? 'reset' : path === '/invite' ? 'invite' : null;
+  const token = useAccountToken(accountAction === 'forgot' ? null : accountAction);
+  const next = safeReturnTo(new URLSearchParams(search).get('next'));
+  const privateLocation = pathname + (search === undefined ? '' : `?${search}`);
 
   useEffect(() => {
     let active: AbortController | undefined;
@@ -45,23 +51,32 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [attempt]);
 
   useEffect(() => {
-    const navigate = () => setMode(authMode());
-    window.addEventListener('hashchange', navigate);
-    return () => window.removeEventListener('hashchange', navigate);
-  }, []);
+    if (accountAction) return;
+    if (user && onAuthPage) navigate(next, true);
+    if (!user && status === 'anonymous' && !onAuthPage) {
+      navigate(authHref('login', privateLocation), true);
+    }
+  }, [accountAction, user, status, onAuthPage, next, privateLocation]);
 
   async function logout() {
     await signOut();
-    window.history.replaceState(null, '', '/#login');
-    setMode('login');
     setUser(null);
     setStatus('loading');
+    navigate('/login', true);
     setAttempt(value => value + 1);
   }
 
+  if (accountAction) return <AccountLinkScreen key={path} action={accountAction} token={token ?? ''} next={next}
+    onContinue={() => {
+      if (accountAction === 'reset') setUser(null);
+      navigate(user && accountAction !== 'reset' ? next : authHref('login', next), true);
+      setStatus('loading');
+      setAttempt(value => value + 1);
+    }} />;
+
   if (user) return <SessionContext.Provider key={user.id} value={{ user, logout }}>{children}</SessionContext.Provider>;
 
-  return <AuthScreen mode={mode} status={status} onSignedIn={() => {
+  return <AuthScreen mode={mode} next={next} status={status} onSignedIn={() => {
     setStatus('loading');
     setAttempt(value => value + 1);
   }} onRetry={() => {

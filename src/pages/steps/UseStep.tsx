@@ -41,7 +41,7 @@ for box in results[0].boxes:
           <span className="p-icon"><Icon name="camera" /></span>
           <h3>Inspect in the browser</h3>
           <p>Use a webcam or upload photos and get a pass or fail result for each part.</p>
-          <a className="btn" href={`#/inspect?project=${encodeURIComponent(datasetId)}`}>Open Inspect <Icon name="arrow" /></a>
+          <a className="btn" href={`/inspect?project=${encodeURIComponent(datasetId)}`}>Open Inspect <Icon name="arrow" /></a>
         </section>
         <section className="card use-card">
           <span className="p-icon"><Icon name="download" /></span>

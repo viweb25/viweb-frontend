@@ -9,22 +9,19 @@ import { classColor } from '../../../ui/common';
 export type Preset = 'fast' | 'balanced' | 'accurate';
 
 export const PRESETS: Record<Preset, {
-  name: string; sub: string; time: string; accuracy: number; accuracyLabel: string; icon: IconName; bestFor: string;
+  name: string; sub: string; icon: IconName;
   values: Partial<TrainingOptions>;
 }> = {
   fast: {
-    name: 'Fast', sub: 'Quick first result', time: 'Shortest run', accuracy: 1, accuracyLabel: 'Good', icon: 'bolt',
-    bestFor: 'A first try',
+    name: 'Quick trial', sub: 'Check that your photos and labels work.', icon: 'bolt',
     values: { epochs: 30, imgsz: 512, patience: 10, max_minutes: 60 },
   },
   balanced: {
-    name: 'Balanced', sub: 'Best for most projects', time: 'About 3× Fast', accuracy: 2, accuracyLabel: 'Better', icon: 'target',
-    bestFor: 'Most projects',
+    name: 'Standard', sub: 'Start here for a regular training run.', icon: 'target',
     values: { epochs: 100, imgsz: 640, patience: 20, max_minutes: 180 },
   },
   accurate: {
-    name: 'Best', sub: 'Takes longer, finds more', time: 'About 3× Balanced', accuracy: 3, accuracyLabel: 'Best', icon: 'star',
-    bestFor: 'Small parts, final model',
+    name: 'More detail', sub: 'Use larger images for small details.', icon: 'star',
     values: { epochs: 200, imgsz: 768, patience: 40, max_minutes: 240, cos_lr: true },
   },
 };
@@ -51,6 +48,12 @@ export function isCustomized(options: TrainingOptions, preset: Preset) {
 
 /** A readable problem with the options, or '' when they can be sent. */
 export function optionsProblem(options: TrainingOptions) {
+  for (const field of RUN_LIMITS) {
+    const value = options[field.key];
+    if (!Number.isInteger(value) || value < field.min || value > field.max) {
+      return `${field.label} must be a whole number from ${field.min} to ${field.max}.`;
+    }
+  }
   if (options.validation_percent + options.test_percent > 50) {
     return 'Keep at least half of your photos for training: lower the validation or test share.';
   }
@@ -76,13 +79,67 @@ function NumberInput({ field, options, set }: { field: NumField; options: Traini
   </label>;
 }
 
-function Section({ num, icon, title, summary, children, open }: {
-  num: number; icon: IconName; title: string; summary: string; children: ReactNode; open?: boolean;
+function Section({ icon, title, summary, children }: { icon: IconName; title: string; summary: string; children: ReactNode;
 }) {
-  return <details className="card adv-section" open={open}>
-    <summary><span className="num">{num}</span><Icon name={icon} />{title}<small>{summary}</small></summary>
+  return <details className="card adv-section">
+    <summary><Icon name={icon} />{title}<small>{summary}</small></summary>
     <div className="adv-body">{children}</div>
   </details>;
+}
+
+const RUN_LIMITS = [
+  n('epochs', 'Training passes', 1, 300, 1, 'One pass studies all training photos once.'),
+  n('batch', 'Photos per batch', 1, 32, 1, 'Use fewer photos per batch if training runs out of memory.'),
+  n('patience', 'Stop after passes without improvement', 1, 100, 1, 'Training can finish early when quality stops improving.'),
+  n('max_minutes', 'Time limit (minutes)', 1, 240, 1, 'Training stops if it reaches this limit.'),
+  n('validation_percent', 'Validation photos (%)', 5, 40, 1, 'These photos check progress during training.'),
+  n('test_percent', 'Test photos (%)', 0, 40, 1, 'These photos are held back for the final score.'),
+];
+
+export function RunSettings({ options, set }: { options: TrainingOptions; set: SetOption }) {
+  return <section className="card workspace-panel run-settings">
+    <div><h2>Training settings</h2><p className="muted">Start with a preset, then adjust what matters for this run.</p></div>
+    <label className="field">Model version name
+      <input maxLength={80} placeholder="Box label check, first run" value={options.version_name}
+        onChange={event => set('version_name', event.target.value)} />
+    </label>
+    <label className="field">Training notes
+      <textarea maxLength={1000} rows={2} placeholder="Added photos of labels that cross the marked area."
+        value={options.notes} onChange={event => set('notes', event.target.value)} />
+    </label>
+    <div className="fields">
+      {RUN_LIMITS.map(field => <NumberInput field={field} options={options} set={set} key={field.key} />)}
+      <label className="field">Training image size
+        <select value={options.imgsz} onChange={event => set('imgsz', Number(event.target.value))}>
+          {[320, 416, 512, 640, 768, 960, 1024].map(size => <option key={size} value={size}>{size} px</option>)}
+        </select>
+        <small>A larger image can help if the label covers very little of the photo.</small>
+      </label>
+      <label className="field">Model size
+        <select value={options.model_size} onChange={event => set('model_size', event.target.value as TrainingOptions['model_size'])}>
+          <option value="n">Nano</option><option value="s">Small</option><option value="m">Medium</option>
+          <option value="l">Large</option><option value="x">Extra large</option>
+        </select>
+        <small>A larger model needs more time and memory.</small>
+      </label>
+    </div>
+    <div className="fields run-adjustments">
+      <label className="check"><input type="checkbox" checked={options.fliplr > 0}
+        onChange={event => set('fliplr', event.target.checked ? 0.5 : 0)} /> Use mirrored photos during training</label>
+      <label className="field">Brightness variety ({Math.round(options.hsv_v * 100)}%)
+        <input type="range" min={0} max={1} step={.05} value={options.hsv_v}
+          onChange={event => set('hsv_v', event.target.valueAsNumber)} />
+        <small>Increase if real photos have a mix of brighter and darker lighting.</small>
+      </label>
+    </div>
+    <details className="training-example">
+      <summary>Example settings for a fixed camera</summary>
+      <p className="small muted">For the box label check, start with photos of straight and crooked labels on different boxes. Keep some photos from another shift for testing. Keep the original left and right orientation and use mild brightness changes if the light varies.</p>
+      <button type="button" className="btn ghost small" onClick={() => { set('fliplr', 0); set('hsv_v', .15); }}>
+        Apply photo adjustments
+      </button>
+    </details>
+  </section>;
 }
 
 /* ---------- Advanced settings ---------- */
@@ -105,60 +162,35 @@ export function AdvancedSettings({ options, set, labels, customized, onReset }: 
       <button type="button" className="btn ghost small" onClick={onReset} disabled={!customized}><Icon name="undo" /> Reset to preset</button>
     </div>
 
-    <Section num={1} icon="flag" title="Project" summary="Version name and notes" open>
-      <div className="fields">
-        <label className="field">Version name<input maxLength={80} placeholder="e.g. v2 with night shots" value={options.version_name}
-          onChange={event => set('version_name', event.target.value)} /></label>
-        <label className="field">Task<input value="Object detection (boxes)" disabled /></label>
-      </div>
-      <label className="field">Run notes<textarea maxLength={1000} rows={2} value={options.notes} placeholder="What changed in this run?"
-        onChange={event => set('notes', event.target.value)} /></label>
-      <div className="row">{labels.map((label, index) => <span className="chip plain" key={label}>
-        <span className="swatch" style={{ background: classColor(index), width: 9, height: 9 }} />{label}</span>)}</div>
-    </Section>
+    {labels.length > 0 && <div className="row">{labels.map((label, index) => <span className="chip plain" key={label}>
+      <span className="swatch" style={{ background: classColor(index), width: 9, height: 9 }} />{label}</span>)}</div>}
 
-    <Section num={2} icon="layers" title="Dataset" summary={`${train}/${options.validation_percent}/${options.test_percent} split`}>
+    <Section icon="layers" title="Dataset" summary={`${train}/${options.validation_percent}/${options.test_percent} split`}>
       <div className="split-bar" aria-hidden="true">
         <span className="tr" style={{ width: `${Math.max(0, train)}%` }}>Study {train}%</span>
         <span className="va" style={{ width: `${options.validation_percent}%` }}>Check {options.validation_percent}%</span>
         {options.test_percent > 0 && <span className="te" style={{ width: `${options.test_percent}%` }}>Test {options.test_percent}%</span>}
       </div>
       {num([
-        n('validation_percent', 'Validation share (%)', 5, 40, 1, 'Checked during training'),
-        n('test_percent', 'Test share (%)', 0, 40, 1, 'Held back for a final score'),
         n('seed', 'Random seed', 0, 2147483647, 1, 'Same seed gives the same split'),
         n('min_box_px', 'Ignore boxes smaller than (px)', 0, 128, 1, 'Measured at the training image size'),
       ])}
       <p className="small muted"><Icon name="check" /> Duplicate photos are skipped on upload and unreadable images are reported before training. Every class is always kept in the training split.</p>
     </Section>
 
-    <Section num={3} icon="cpu" title="Model" summary={`${options.model_size.toUpperCase()} size · ${options.imgsz}px`}>
-      <div className="field"><span>Model size</span>
-        <div className="choice-grid">{([['n', 'Nano', 'Fastest, smallest'], ['s', 'Small', 'Good balance'], ['m', 'Medium', 'More accurate'], ['l', 'Large', 'Slow on CPU'], ['x', 'XL', 'Slowest']] as const)
-          .map(([value, label, hint]) => <button type="button" key={value} className="choice" aria-pressed={options.model_size === value}
-            onClick={() => set('model_size', value)}><strong>{label}</strong><small>{hint}</small></button>)}</div>
-        <small>Bigger models are slower but can be more accurate.</small>
-      </div>
-      <div className="fields">
-        <label className="field">Input image size<select value={options.imgsz} onChange={event => set('imgsz', Number(event.target.value))}>
-          {[320, 416, 512, 640, 768, 960, 1024].map(size => <option key={size} value={size}>{size} px</option>)}
-        </select><small>Larger finds small objects but trains slower</small></label>
-        {num([n('freeze', 'Frozen layers', 0, 10, 1, 'Freeze the backbone for tiny datasets')])}
-      </div>
+    <Section icon="cpu" title="Model" summary={`${options.model_size.toUpperCase()} size · ${options.imgsz}px`}>
+      {num([n('freeze', 'Frozen layers', 0, 10, 1, 'Keep part of the starter model fixed')])}
       <label className="check"><input type="checkbox" checked={options.pretrained} onChange={event => set('pretrained', event.target.checked)} />
         Start from pretrained weights (recommended)</label>
     </Section>
 
-    <Section num={4} icon="refresh" title="Training" summary={`${options.epochs} epochs · ${options.optimizer}`}>
+    <Section icon="refresh" title="Training" summary={`${options.epochs} epochs · ${options.optimizer}`}>
       {num([
-        n('epochs', 'Epochs', 1, 300, 1, 'Passes over your photos'),
-        n('batch', 'Batch size', 1, 32, 1),
         n('lr0', 'Initial learning rate', .000001, .1, .0001),
         n('lrf', 'Final learning rate (fraction)', .000001, 1, .001),
         n('warmup_epochs', 'Warmup epochs', 0, 15, .5),
         n('momentum', 'Momentum', 0, .999, .001),
         n('weight_decay', 'Weight decay', 0, .1, .0001),
-        n('patience', 'Early-stop patience', 1, 100, 1, 'Stop when no progress for this many epochs'),
       ])}
       <div className="fields">
         <label className="field">Optimizer<select value={options.optimizer} onChange={event => set('optimizer', event.target.value as TrainingOptions['optimizer'])}>
@@ -168,7 +200,7 @@ export function AdvancedSettings({ options, set, labels, customized, onReset }: 
       </div>
     </Section>
 
-    <Section num={5} icon="sliders" title="Loss weights" summary={`box ${options.box} · cls ${options.cls} · dfl ${options.dfl}`}>
+    <Section icon="sliders" title="Loss weights" summary={`box ${options.box} · cls ${options.cls} · dfl ${options.dfl}`}>
       {num([
         n('box', 'Box loss', .01, 20, .1, 'How much box position matters'),
         n('cls', 'Classification loss', .01, 10, .1, 'Raise for many similar classes'),
@@ -176,7 +208,7 @@ export function AdvancedSettings({ options, set, labels, customized, onReset }: 
       ])}
     </Section>
 
-    <Section num={6} icon="wand" title="Augmentation" summary="Flips, color, mosaic and more">
+    <Section icon="wand" title="Augmentation" summary="Flips, color, mosaic and more">
       <p className="small muted">Augmentation makes changed copies of your photos while training (flipped, brighter, shifted) so the model copes with real-world variation.</p>
       {num([
         n('fliplr', 'Horizontal flip (probability)', 0, 1, .05),
@@ -188,7 +220,6 @@ export function AdvancedSettings({ options, set, labels, customized, onReset }: 
         n('perspective', 'Perspective', 0, .001, .0001),
         n('hsv_h', 'Hue', 0, .5, .005),
         n('hsv_s', 'Saturation', 0, 1, .05),
-        n('hsv_v', 'Brightness', 0, 1, .05),
         n('mosaic', 'Mosaic', 0, 1, .05),
         n('mixup', 'Mixup', 0, 1, .05),
         n('copy_paste', 'Copy-paste', 0, 1, .05),
@@ -197,7 +228,7 @@ export function AdvancedSettings({ options, set, labels, customized, onReset }: 
       ])}
     </Section>
 
-    <Section num={7} icon="target" title="Validation thresholds" summary={`IoU ${options.iou} · max ${options.max_det}`}>
+    <Section icon="target" title="Validation thresholds" summary={`IoU ${options.iou} · max ${options.max_det}`}>
       {num([
         n('iou', 'NMS IoU threshold', .1, .95, .05, 'Overlap at which duplicate boxes merge'),
         n('max_det', 'Max detections per image', 1, 1000, 1),
@@ -205,12 +236,8 @@ export function AdvancedSettings({ options, set, labels, customized, onReset }: 
       <p className="small muted">Tracked metrics: precision, recall, mAP50 and mAP50–95. You choose the confidence threshold when testing.</p>
     </Section>
 
-    <Section num={8} icon="clock" title="Hardware and runtime" summary={`Up to ${options.max_minutes} min`}>
-      {num([n('max_minutes', 'Time limit (minutes)', 1, 240, 1, 'Training stops with an error when this is reached')])}
-      <p className="small muted"><Icon name="cpu" /> Runs on your workspace’s training worker (CPU).</p>
-    </Section>
 
-    <Section num={9} icon="save" title="Checkpoints and outputs" summary="Best and last .pt">
+    <Section icon="save" title="Checkpoints and outputs" summary="Best and last .pt">
       {num([n('save_period', 'Also save every N epochs', 0, 100, 1, '0 saves only the best and last')])}
       <p className="small muted">Output: PyTorch weights (best.pt and last.pt) you can download in the Use step.</p>
     </Section>
